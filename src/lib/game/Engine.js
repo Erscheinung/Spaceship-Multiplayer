@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { makeShip, makeRock, makePickup, makeTower, disposeObject, COLORS } from './procedural.js';
-import { worldX, cityObstacles } from './course.js';
+import { worldPosition, courseFrame, FLIGHT_SPEED, cityObstacles } from './course.js';
 import { SHIP_COLORS } from './settings.js';
-import { Simulation, STEP } from './simulation.js';
+import { Simulation, STEP, advanceFlight } from './simulation.js';
 
 export class Engine {
   constructor(container, { onHud, onPause, onError }) {
@@ -41,11 +41,20 @@ export class Engine {
   receiveSnapshot(state) {
     if (this.mode !== 'client' || !Array.isArray(state.rocks) || !Array.isArray(state.bullets) || !Array.isArray(state.pickups) || !Array.isArray(state.effects)) return;
     if (this.state?.settings?.colors?.join() !== state.settings?.colors?.join()) this.applyColors(state.settings?.colors);
+    if (this.state && state.time < this.state.time) return;
+    const collision = this.state && state.players[this.localId].hp !== this.state.players[this.localId].hp;
+    state.obstacles = cityObstacles(state.time, state.players.filter(p => p.active && p.hp > 0));
     this.state = state; this.onHud(state);
+    this.predictedPlayer = { ...state.players[this.localId] };
+    this.predictionSteps = collision ? [] : (this.predictionSteps ?? []).filter(step => step.time > state.time);
+    for (const step of this.predictionSteps) if (this.predictedPlayer.hp > 0) advanceFlight(this.predictedPlayer, step.input, Math.min(step.dt, step.time-state.time), step.time);
+    this.clientTime = Math.max(state.time, this.predictionSteps.at(-1)?.time ?? state.time);
     if (state.over) { this.draw(1 / 60); this.world.render(state.time, state.players[this.localId]); this.setPaused(true); }
   }
   setPaused(paused) {
     if (this.destroyed || this.paused === paused) return;
+    this.predictionSteps = [];
+    if (this.mode === 'client' && this.state) { this.clientTime=this.state.time;this.predictedPlayer={...this.state.players[this.localId]}; }
     this.paused = paused; this.keys.clear(); this.touch = { x: 0, z: 0 }; this.actions = { boost:false, lift:false }; this.accumulator = 0;
     this.sim?.setInput(0, { x: 0, z: 0 }); this.sim?.setInput(1, { x: 0, z: 0 });
     if (paused) cancelAnimationFrame(this.raf);
@@ -61,26 +70,35 @@ export class Engine {
       if (now - (this.remoteInputTime ?? 0) > 300) this.sim.setInput(1, { x: 0, z: 0 });
       while (this.accumulator >= STEP) { this.sim.tick(); this.accumulator -= STEP; }
       this.state = this.sim.state; this.snapshotClock += dt; this.hudClock += dt;
-      if (this.snapshotClock >= 0.05 || this.state.over) { this.network?.send({ type: 'snapshot', state: this.sim.snapshot() }); this.snapshotClock = 0; }
+      if (this.snapshotClock >= 0.05 || this.state.over) { const { obstacles, ...snapshot } = this.sim.snapshot(); this.network?.send({ type: 'snapshot', state: snapshot }); this.snapshotClock = 0; }
       if (this.hudClock >= 0.1 || this.state.over) { this.onHud(this.sim.snapshot()); this.hudClock = 0; }
     }
-    this.attractTime += dt; this.draw(dt); this.world.render(this.state?.time ?? this.attractTime, this.state?.players[this.localId], dt, this.state?.settings?.difficulty === 'brutal');
+    if (this.mode === 'client' && this.state && this.predictedPlayer) {
+      const predictionDt = Math.max(0, Math.min(dt, this.state.time + .2 - this.clientTime));
+      if (predictionDt > 0) {
+        this.clientTime += predictionDt;
+        const input = this.input(); if (this.predictedPlayer.hp > 0) advanceFlight(this.predictedPlayer, input, predictionDt, this.clientTime);
+        this.predictionSteps.push({ time: this.clientTime, dt: predictionDt, input });
+      }
+    }
+    this.attractTime += dt; this.draw(dt); this.world.render(this.renderTime(), this.mode === 'client' ? this.predictedPlayer : this.state?.players[this.localId], dt, this.state?.settings?.difficulty === 'brutal');
     if (this.state?.over) { this.setPaused(true); return; }
     this.raf = requestAnimationFrame(this.frame);
   }
+  renderTime() { return this.mode === 'client' && this.state ? this.clientTime ?? this.state.time : this.state?.time ?? this.attractTime; }
   draw(dt) {
-    const time = this.state?.time ?? this.attractTime;
+    const time = this.renderTime(), age = Math.max(0, time - (this.state?.time ?? time));
+    const orient = (object, z) => {
+      const f=courseFrame(time*FLIGHT_SPEED-z);
+      object.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(f.right.x,f.right.y,f.right.z),new THREE.Vector3(f.up.x,f.up.y,f.up.z),new THREE.Vector3(-f.forward.x,-f.forward.y,-f.forward.z)));
+    };
     this.ships.forEach((ship, i) => {
-      const p = this.state?.players[i]; ship.visible = !p || (p.active && p.hp > 0);
-      const z = p?.z ?? 7, x = worldX(p?.x ?? (i ? 4 : -4), z, time);
-      const smoothing = this.mode === 'client' ? 1 - Math.exp(-dt * 24) : 1;
-      const dx = x - ship.position.x; ship.position.x += dx * smoothing; ship.position.z += (z - ship.position.z) * smoothing;
-      ship.position.y += ((p?.y ?? 0) + Math.sin(time * 4 + i) * .06 - ship.position.y) * smoothing;
-      const bank = -(p?.vx ?? Math.sin(time)*2) / 12;
-      const ease = 1 - Math.exp(-dt * 9);
-      ship.rotation.z = THREE.MathUtils.lerp(ship.rotation.z, bank * .75, ease);
-      ship.rotation.y = THREE.MathUtils.lerp(ship.rotation.y, bank * .16, ease);
-      ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, (p?.vy ?? 0)*.025 - (p?.boost ?? 0)*.003, ease);
+      const source = this.state?.players[i];
+      const p = this.mode === 'client' && i === this.localId ? this.predictedPlayer : source ? {...source, z:source.z-(source.boost ?? 0)*age, x:source.x+(source.vx ?? 0)*age} : null; ship.visible = !p || (p.active && p.hp > 0);
+      const z = p?.z ?? 7, point = worldPosition(p?.x ?? (i ? 4 : -4), (p?.y ?? 0) + Math.sin(time*4+i)*.06, z, time);
+      ship.position.set(point.x,point.y,point.z);orient(ship,z);
+      const bank=-(p?.vx ?? Math.sin(time)*2)/12;
+      ship.rotateZ(bank*.75);ship.rotateY(bank*.16);ship.rotateX((p?.vy ?? 0)*.025-(p?.boost ?? 0)*.003);
       ship.scale.setScalar(p?.invulnerable > 0 ? 1 + Math.sin(time * 24) * .035 : 1);
       ship.children.filter(c => c.name === 'trail').forEach((c, j) => { c.scale.y = 0.85 + (p?.boost ?? 0)*.08 + Math.sin(time * 30 + j) * 0.25; });
     });
@@ -89,18 +107,19 @@ export class Engine {
     const sync = (items, prefix, create, update) => {
       for (const entity of items) {
         const key = prefix + entity.id; alive.add(key); let object = this.objects.get(key);
-        if (!object) { object = create(entity); object.position.set(worldX(entity.x, entity.z, time), 0, entity.z); this.objects.set(key, object); this.world.scene.add(object); }
-        const alpha = this.mode === 'client' ? 1 - Math.exp(-dt * 28) : 1;
-        object.position.x += (worldX(entity.x, entity.z, time) - object.position.x) * alpha; object.position.z += (entity.z - object.position.z) * alpha; object.position.y += ((entity.y ?? 0) - object.position.y) * alpha; update(object, entity);
+        if (!object) { object = create(entity); this.objects.set(key, object); this.world.scene.add(object); }
+        const z=entity.z+(prefix==='t'?FLIGHT_SPEED:prefix==='r'?entity.speed:prefix==='b'?entity.vz:prefix==='p'?1.8:0)*age;
+        const point=worldPosition(entity.x+(prefix==='b'?entity.vx*age:0),(entity.y ?? 0)+(prefix==='b'?(entity.vy ?? 0)*age:0),z,time);
+        object.position.set(point.x,point.y,point.z);orient(object,z);update(object, entity);
       }
     };
     sync(this.state?.obstacles ?? cityObstacles(time), 't', makeTower, () => {});
-    sync(this.state?.rocks ?? [], 'r', r => makeRock(r.seed), (o, r) => { o.scale.setScalar(r.r); o.rotation.set(time * r.spin, time * 0.3, time * r.spin * 0.4); });
-    sync(this.state?.pickups ?? [], 'p', p => makePickup(p.type), o => { o.rotation.set(time, time * 1.5, Math.PI / 4); o.position.y += Math.sin(time * 4) * 0.08; });
-    sync(this.state?.bullets ?? [], 'b', b => new THREE.Mesh(new THREE.SphereGeometry(0.17, 5, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(SHIP_COLORS[this.state?.settings?.colors[b.owner]] ?? COLORS.cyan).multiplyScalar(5) })), (o, b) => { o.scale.set(1, 1, 3); o.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(b.vx,b.vy ?? 0,b.vz).normalize()); });
+    sync(this.state?.rocks ?? [], 'r', r => makeRock(r.seed), (o, r) => { o.scale.setScalar(r.r); o.rotateX(time*r.spin);o.rotateY(time*.3); });
+    sync(this.state?.pickups ?? [], 'p', p => makePickup(p.type), o => { o.rotateX(time);o.rotateY(time*1.5);o.rotateZ(Math.PI/4); o.position.y += Math.sin(time * 4) * 0.08; });
+    sync(this.state?.bullets ?? [], 'b', b => new THREE.Mesh(new THREE.SphereGeometry(0.17, 5, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(SHIP_COLORS[this.state?.settings?.colors[b.owner]] ?? COLORS.cyan).multiplyScalar(5) })), (o, b) => { o.scale.set(1, 1, 3); o.quaternion.multiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(b.vx,b.vy ?? 0,b.vz).normalize())); });
     sync(this.state?.effects ?? [], 'e', e => {
       const o = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(COLORS[e.color]).multiplyScalar(3), wireframe: true, transparent: true, depthWrite: false })); return o;
-    }, (o, e) => { o.scale.setScalar((0.45 - e.life) * 7 + 0.4); o.material.opacity = e.life / 0.45; o.rotation.y = time * 2; });
+    }, (o, e) => { o.scale.setScalar((0.45 - e.life) * 7 + 0.4); o.material.opacity = e.life / 0.45; o.rotateY(time*2); });
     for (const [key, object] of this.objects) if (!alive.has(key)) { disposeObject(object); this.objects.delete(key); }
   }
   destroy() {

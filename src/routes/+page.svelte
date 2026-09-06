@@ -27,6 +27,7 @@
   function fail(message) { error = message; busy = false; status = ''; if (playing) { flags = [true, true]; engine?.setPaused(true); releaseFlightControls(); } }
   function start(settings = {difficulty, colors:[shipColor,'coral']}) { busy = false; screen = 'game'; hud = null; flags = [false, false]; engine.start({ host, solo, network, settings });boostHeld=false;liftHeld=false;stick={x:0,z:0};tilt?.calibrate(); if (document.hidden) togglePause(true); }
   async function connect(create) {
+    if (busy || !ready) return;
     error = ''; busy = true; host = create; solo = false; status = create ? 'Opening a frequency…' : 'Finding your wingmate…';
     network?.destroy();
     const session = new PeerSession({
@@ -41,7 +42,7 @@
     try { if (create) await session.create(); else { room = code.toUpperCase(); await session.join(room); } }
     catch (e) { if (network === session) { fail(e.message); session.destroy(); } }
   }
-  function practice() { solo = true; host = true; error = ''; room = 'SOLO'; start(); }
+  function practice() { if (!ready || busy || screen !== 'menu') return; network?.destroy(); network=null; solo = true; host = true; error = ''; room = 'SOLO'; start(); }
   function togglePause(force = false) {
     if (!playing || hud?.over || error) return;
     const next = force === true ? true : !flags[me];
@@ -84,6 +85,8 @@
   }
 </script>
 
+<svelte:window onkeydown={e => { if (e.code === 'Space' && !e.repeat && screen === 'menu' && !e.target?.closest?.('input, textarea, select, button, a, summary, [contenteditable]')) { e.preventDefault(); practice(); } }} />
+
 <svelte:head><title>NEON WING — The scenic route</title><meta name="description" content="An illustrated 3D city flight game. Two pilots. One frequency. Dodge towers and fly together through a winding pastel city." /></svelte:head>
 
 <div class="game-canvas" bind:this={canvas}></div>
@@ -91,7 +94,7 @@
 <div class:in-game={playing} class="shell">
   <header>
     <a href="/" class="brand" aria-label="Neon Wing home"><span class="brand-icon">⋈</span> NEON<span>WING</span></a>
-    <div class="header-right"><span class="live-dot"></span> {playing ? `${solo ? 'PRACTICE' : 'P2P LINK'} / ${room}` : 'CO-OP SURVIVAL'} <span class="version">CITY / 02</span></div>
+    <div class="header-right"><span class="live-dot"></span> {playing ? `${solo ? 'PRACTICE' : 'P2P LINK'} / ${room}` : 'CO-OP SURVIVAL'} <span class="version">SKYWAY / 04</span></div>
   </header>
 
   {#if !playing}
@@ -99,6 +102,7 @@
       <section class="hero">
         <p class="eyebrow"><span></span> TWO PILOTS. ONE FREQUENCY.</p>
         <h1>TAKE THE<br /><em>SCENIC ROUTE.</em></h1>
+        {#if screen === 'menu'}<button class="quick-start" onclick={practice} disabled={!ready || busy}><span class="desktop-start">PRESS SPACE TO START</span><span class="phone-start">TAP TO START</span><small>SOLO PRACTICE ↗</small></button>{/if}
         <p class="intro">A little altitude. A lot of close calls.<br />Find your wingmate and thread the waking city.</p>
         <div class="hero-tags"><span>01 — EVADE</span><span>02 — EVOLVE</span><span>03 — ENDURE</span></div>
       </section>
@@ -137,7 +141,8 @@
           <div class="divider"><span>OR GO OFFLINE</span></div>
           <button class="practice" onclick={practice} disabled={!ready || busy}>Solo practice <span>→</span></button>
         {/if}
-        {#if error}<p class="error" role="alert">{error}</p>{:else if busy}<p class="status" role="status">{status}</p>{/if}
+        {#if (busy || screen === 'lobby') && !error}<div class="connection-progress" role="status"><div class="link-orbit"><span>✦</span><i></i><span>✦</span></div><p>{status}</p><small>Find room → negotiate route → launch together</small></div>{/if}
+        {#if error}<p class="error" role="alert">{error}</p>{/if}
 <details class="control-details"><summary>Control settings</summary><div class="control-settings"><label for="steering">PHONE STEERING</label><select id="steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select><label for="sensitivity">STEERING SENSITIVITY</label><input id="sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div></details>
         <div class="panel-bottom"><span class="live-dot"></span> WEBRTC DIRECT LINK <span>2 PLAYERS MAX</span></div>
       </section>
@@ -153,8 +158,8 @@
     </div>
     {#if !solo}<div class="wingmate-status">WINGMATE <span class:down={hud?.players[1-me]?.hp === 0}>{hud?.players[1-me]?.hp === 0 ? 'SIGNAL LOST — KEEP FLYING' : `${hud?.players[1-me]?.hp ?? 5}/5 HULL`}</span></div>{/if}
     <div class="flight-instruments"><span>SPD <b data-testid="speed">{Math.round((14+(hud?.players[me]?.boost ?? 0))*3.6)}</b> km/h</span><span>ALT <b data-testid="altitude">{Math.round((hud?.players[me]?.y ?? 0)+4)}</b> m</span><span>{(hud?.settings?.difficulty ?? difficulty).toUpperCase()}</span></div>
-    <div class="route-label"><span>SHIFT / BOOST · SPACE / CLIMB</span><strong>The Afterlight District</strong></div>
-    <div class="game-hint">DODGE THE TOWERS <span>◇</span> COLLECT UPGRADE CORES <span>◇</span> {hud?.settings?.difficulty==='brutal' ? 'ALIGN YOUR SHOTS' : 'WEAPONS AUTO-FIRE'}</div>
+    <div class="route-label"><span>SHIFT / BOOST · SPACE / CLIMB</span><strong>The Afterlight Skyway</strong></div>
+    <div class="game-hint">BANK THROUGH THE SKYWAY <span>◇</span> COLLECT UPGRADE CORES <span>◇</span> {hud?.settings?.difficulty==='brutal' ? 'ALIGN YOUR SHOTS' : 'WEAPONS AUTO-FIRE'}</div>
     <div class="touch-controls">
       {#if controlMode==='drag'}<button aria-label="Drag to steer" class="touch-pad" onpointerdown={touchMove} onpointermove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))touchMove(e);}} onpointerup={releaseSteering} onpointercancel={releaseSteering} onlostpointercapture={releaseSteering}><span style:transform={`translate(${stick.x*28}px,${stick.z*28}px)`}>✥</span></button>{:else}<button class="calibrate" onclick={()=>tilt.calibrate()}>◎<br/>CALIBRATE TILT</button>{/if}
       <span>{controlMode==='drag'?'DRAG TO STEER':'TILT TO STEER'}</span>

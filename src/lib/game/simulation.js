@@ -1,10 +1,28 @@
 import { DIFFICULTIES, flightSettings } from './settings.js';
-import { cityObstacles, hitsBuilding } from './course.js';
+import { cityObstacles, hitsBuilding, courseFrame, FLIGHT_SPEED } from './course.js';
 export const BOUNDS = { x: 13, zMin: -12, zMax: 13 };
 export const STEP = 1 / 60;
 export const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z, (a.y ?? 0) - (b.y ?? 0));
 const player = (id, active) => ({ id, active, x: id ? 4 : -4, z: 8, y: 0, vy: 0, vx: 0, boost: 0, travel: 0, hp: 5, rate: 0, spread: 0, cooldown: 0, invulnerable: 2 });
+
+// Shared movement for authoritative steps and guest visual prediction.
+export function advanceFlight(p, input, dt, time) {
+  const length = Math.max(1, Math.hypot(input.x, input.z));
+  p.boost += ((input.boost ? 25 : 0) - p.boost) * (1 - Math.exp(-dt * (input.boost ? 2.4 : 1.1)));
+  p.travel += p.boost * dt;
+  const curve = courseFrame(time * FLIGHT_SPEED - p.z).curvature;
+  const drift = -curve * (FLIGHT_SPEED + p.boost) ** 2 * .16;
+  p.vx += (input.x / length * 12 + drift - p.vx) * (1 - Math.exp(-dt * 10));
+  p.x += p.vx * dt;
+  const boundary = Math.abs(p.x) > BOUNDS.x;
+  if (boundary) { p.x = Math.sign(p.x) * (BOUNDS.x - .15); p.vx *= -.4; p.boost *= .75; }
+  p.z = clamp(p.z + input.z / length * 11 * dt - p.boost * dt, BOUNDS.zMin - p.travel, BOUNDS.zMax - p.travel);
+  p.vy += ((input.lift ? 10 : -6) - p.vy) * (1 - Math.exp(-dt * 3.5));
+  p.y = clamp(p.y + p.vy * dt, 0, 28);
+  if (p.y === 0 || p.y === 28) p.vy = 0;
+  return boundary;
+}
 
 // This module has no browser dependencies. Only the host advances it.
 export class Simulation {
@@ -36,14 +54,11 @@ export class Simulation {
     for (const p of s.players) {
       if (!p.active || p.hp <= 0) continue;
       const input = this.inputs[p.id];
-      p.boost += ((input.boost ? 25 : 0) - p.boost) * (1 - Math.exp(-dt * (input.boost ? 2.4 : 1.1)));
-      p.travel += p.boost * dt;
-      p.vx += (input.x * 12 - p.vx) * (1 - Math.exp(-dt * 10));
-      p.x = clamp(p.x + p.vx * dt, -BOUNDS.x, BOUNDS.x);
-      p.z = clamp(p.z + input.z * 11 * dt - p.boost * dt, BOUNDS.zMin - p.travel, BOUNDS.zMax - p.travel);
-      p.vy += ((input.lift ? 10 : -6) - p.vy) * (1 - Math.exp(-dt * 3.5));
-      p.y = clamp(p.y + p.vy * dt, 0, 28);
-      if (p.y === 0 || p.y === 28) p.vy = 0;
+      const boundary = advanceFlight(p, input, dt, s.time);
+      if (boundary && p.invulnerable <= 0) {
+        p.hp = Math.max(0, p.hp - this.difficulty.damage); p.invulnerable = 1.5;
+        this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y);
+      }
       p.invulnerable = Math.max(0, p.invulnerable - dt); p.cooldown -= dt;
       const target = s.rocks.reduce((best, r) => !best || distance(p, r) < distance(p, best) ? r : best, null);
       if ((target || !this.difficulty.aim) && p.cooldown <= 0) {
@@ -83,8 +98,13 @@ export class Simulation {
       for (const building of s.obstacles) {
         if (hitsBuilding(p, building)) {
           if (p.invulnerable <= 0) { p.hp = Math.max(0, p.hp - this.difficulty.damage); p.invulnerable = 1.5; this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y); }
-          const direction = p.x < building.x ? -1 : 1;
-          p.x = clamp(building.x + direction * (building.width / 2 + 1), -BOUNDS.x, BOUNDS.x);
+          p.boost *= .4;
+          if (building.kind === 'gate') {
+            p.y = clamp(building.y + (p.y < building.y ? -1 : 1) * (building.height / 2 + .8), 0, 28); p.vy = 0;
+          } else {
+            const direction = p.x < building.x ? -1 : 1;
+            p.x = clamp(building.x + direction * (building.width / 2 + 1), -BOUNDS.x, BOUNDS.x); p.vx = direction * 4;
+          }
         }
       }
       for (const drop of s.pickups) {

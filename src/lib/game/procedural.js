@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { FLIGHT_SPEED, roadCenter } from './course.js';
+import { FLIGHT_SPEED, courseFrame, worldPosition } from './course.js';
 
 export const COLORS = { cyan: 0x19cddd, magenta: 0xef657b, orange: 0xffa342 };
 const INK = 0x293c49;
@@ -54,6 +54,17 @@ export function makePickup(type) {
 }
 export function makeTower(b) {
   const g = new THREE.Group();
+  if (b.kind === 'gate') {
+    box(g,0,0,0,b.width,b.height,b.depth,0xe3c56f);
+    for (let x=-12;x<=12;x+=3) box(g,x,0,b.depth/2+.04,1,b.height,.1,INK);
+    return bake(g);
+  }
+  if (b.kind === 'pole') {
+    box(g,0,b.height/2-4,0,b.width,b.height,b.depth,0x365764);
+    box(g,0,b.height-4,0,b.width+1,.6,b.depth+1,0xe3c56f);
+    for (let y=0;y<b.height-4;y+=4) box(g,0,y,0,b.width+.1,.7,b.depth+.1,0xef657b);
+    return bake(g);
+  }
   box(g,0,b.height/2-4,0,b.width,b.height,b.depth,palette[b.id%palette.length]);
   box(g,0,b.height-3.8,0,b.width+.5,.5,b.depth+.5,0x4f6b70);
   for(let y=-1;y<b.height-5;y+=2.6) for(const x of [-1,1]) {
@@ -85,16 +96,9 @@ function makeBlock(index) {
       for(let a=0;a<3;a++) box(g,x-side*4.85,-1.9+a*.9,z,.1,.25,1.25,INK);
     }
     // Street lamps, overhead service lines, trees and planters.
-    box(g,side*15.2,.4,9,.18,8.6,.18,0x365764);
-    box(g,side*13.9,4.5,9,2.8,.18,.18,0x365764);
-    box(g,side*12.7,4.3,9,.7,.25,.6,0xf5df9d);
     box(g,side*17,-3.3,-6,2.4,1.1,2.4,0xcb947f);
     box(g,side*17,-1.7,-6,.4,3,.4,0x74695a);
     const tree=outlined(new THREE.IcosahedronGeometry(2,1),0x699d83); tree.position.set(side*17,.2,-6); g.add(tree);
-  }
-  if(index%3===0) {
-    box(g,0,8,-10,33,.28,.28,0x365764);
-    for(const x of [-7,0,7]) box(g,x,7.55,-10,1.2,.6,.2,0xe3c56f);
   }
   for(let z=-12;z<=12;z+=8) box(g,0,-4, z,.16,.035,3.5,0xf1e4bb);
   const result=bake(g);
@@ -105,8 +109,9 @@ export function makeSkyline(scene) {
   const blocks=Array.from({length:12},(_,i)=>{const g=makeBlock(i);scene.add(g);return g;});
   return (time, viewZ = 0) => blocks.forEach((g,i)=>{
     const z=(((i*32+time*FLIGHT_SPEED-viewZ+64)%384+384)%384)-320+viewZ;
-    g.position.set(roadCenter(time*FLIGHT_SPEED-z),0,z);
-    g.rotation.y=-Math.atan((roadCenter(time*FLIGHT_SPEED-z+1)-roadCenter(time*FLIGHT_SPEED-z-1))/2);
+    const f=courseFrame(time*FLIGHT_SPEED-z), p=worldPosition(0,0,z,time);
+    g.position.set(p.x,p.y,p.z);
+    g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(f.right.x,f.right.y,f.right.z),new THREE.Vector3(f.up.x,f.up.y,f.up.z),new THREE.Vector3(-f.forward.x,-f.forward.y,-f.forward.z)));
   });
 }
 export function disposeObject(object) {
