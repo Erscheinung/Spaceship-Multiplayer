@@ -55,9 +55,43 @@ test('two real peers join, receive state, pause from either side and detect disc
 });
 
 test('mobile terminal fits and touch steering is available', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 }); const errors = collectErrors(page); await open(page);
+  await page.setViewportSize({ width: 402, height: 874 }); const errors = collectErrors(page); await open(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/menu-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Solo practice' }).click(); await expect(page.getByRole('button', { name: 'Drag to steer' })).toBeVisible();
-  await page.screenshot({ path: 'test-results/flight-mobile.png' }); expect(errors).toEqual([]);
+  await expect(page.locator('.run-stats strong')).not.toHaveText('00:00');
+  const cards = await page.locator('.hud > *').evaluateAll(nodes => nodes.map(n => {const r=n.getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom};}));
+  expect(cards[0].right).toBeLessThan(cards[1].left); expect(cards[1].right).toBeLessThan(cards[2].left);expect(cards[2].right).toBeLessThanOrEqual(402);
+  expect(Math.max(...cards.map(c=>c.bottom))).toBeLessThan(160);
+  const pad=await page.getByRole('button',{name:'Drag to steer'}).boundingBox();
+  await page.mouse.move(pad.x+pad.width/2,pad.y+pad.height/2);await page.mouse.down();
+  await page.mouse.move(pad.x+pad.width*.8,pad.y+pad.height*.4);await page.waitForTimeout(250);await page.mouse.up();
+  await page.screenshot({ path: 'test-results/flight-mobile.png' });
+  await page.setViewportSize({width:874,height:402});await page.screenshot({path:'test-results/flight-landscape.png'});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('chase camera keeps either pilot central in desktop, portrait and landscape', async ({ page }) => {
+  await page.goto('/');
+  const errors = collectErrors(page);
+  const projections = await page.evaluate(async () => {
+    const { createScene } = await import('/src/lib/game/scene.js');
+    const { worldX } = await import('/src/lib/game/course.js');
+    const holder = document.createElement('div'); holder.style.cssText='position:fixed;inset:0;z-index:100'; document.body.appendChild(holder);
+    const result=[];
+    for(const [w,h] of [[1440,900],[402,874],[874,402]]) {
+      holder.style.width=w+'px';holder.style.height=h+'px';
+      const world=createScene(holder);
+      for(const x of [-13,4,13]) {
+        const p={x,z:8};world.resetCamera();world.render(20,p);
+        const v=world.camera.position.clone().set(worldX(x,8,20),0,8).project(world.camera);
+        result.push({x:(v.x+1)/2,y:(1-v.y)/2});
+      }
+      world.dispose();
+    }
+    holder.remove();return result;
+  });
+  for(const p of projections) { expect(p.x).toBeGreaterThan(.4);expect(p.x).toBeLessThan(.6);expect(p.y).toBeGreaterThan(.45);expect(p.y).toBeLessThan(.65); }
+  expect(errors).toEqual([]);
 });

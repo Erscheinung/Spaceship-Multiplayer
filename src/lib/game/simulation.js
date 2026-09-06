@@ -1,3 +1,4 @@
+import { cityObstacles, hitsBuilding } from './course.js';
 export const BOUNDS = { x: 13, zMin: -12, zMax: 13 };
 export const STEP = 1 / 60;
 export const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
@@ -9,7 +10,7 @@ export class Simulation {
   constructor({ solo = false, random = Math.random } = {}) {
     this.random = random; this.nextId = 1; this.spawnClock = 0;
     this.inputs = [{ x: 0, z: 0 }, { x: 0, z: 0 }];
-    this.state = { time: 0, score: 0, wave: 1, over: false, players: [player(0, true), player(1, !solo)], rocks: [], bullets: [], pickups: [], effects: [] };
+    this.state = { time: 0, score: 0, wave: 1, over: false, players: [player(0, true), player(1, !solo)], rocks: [], bullets: [], pickups: [], effects: [], obstacles: cityObstacles(0) };
   }
   setInput(id, input) {
     if (!this.inputs[id] || !input || !Number.isFinite(input.x) || !Number.isFinite(input.z)) return;
@@ -25,7 +26,7 @@ export class Simulation {
   tick(dt = STEP) {
     const s = this.state;
     if (s.over) return;
-    s.time += dt; s.wave = 1 + Math.floor(s.time / 25);
+    s.time += dt; s.obstacles = cityObstacles(s.time); s.wave = 1 + Math.floor(s.time / 25);
     this.spawnClock -= dt;
     if (this.spawnClock <= 0) { this.spawnRock(); this.spawnClock = Math.max(0.16, 1.1 - s.time * 0.006); }
     for (const p of s.players) {
@@ -48,6 +49,7 @@ export class Simulation {
     for (const r of s.rocks) r.z += r.speed * dt;
     for (const b of s.bullets) {
       b.x += b.vx * dt; b.z += b.vz * dt; b.life -= dt;
+      if (s.obstacles.some(building => hitsBuilding(b, building, .17))) { b.life = 0; continue; }
       for (const r of s.rocks) {
         if (r.hp <= 0 || distance(b, r) > r.r + 0.25) continue;
         r.hp--; b.life = 0;
@@ -63,6 +65,13 @@ export class Simulation {
       for (const r of s.rocks) {
         if (r.hp > 0 && p.invulnerable <= 0 && distance(p, r) < r.r + 0.65) {
           p.hp--; p.invulnerable = 1.5; r.hp = 0; this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan');
+        }
+      }
+      for (const building of s.obstacles) {
+        if (hitsBuilding(p, building)) {
+          if (p.invulnerable <= 0) { p.hp--; p.invulnerable = 1.5; this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan'); }
+          const direction = p.x < building.x ? -1 : 1;
+          p.x = clamp(building.x + direction * (building.width / 2 + 1), -BOUNDS.x, BOUNDS.x);
         }
       }
       for (const drop of s.pickups) {

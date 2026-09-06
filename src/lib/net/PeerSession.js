@@ -35,7 +35,7 @@ export class PeerSession {
     peer.on('error', e => this.fail(e.type === 'peer-unavailable' ? 'Room not found. Check the code and try again.' : `Network error: ${e.message}`));
     peer.on('disconnected', () => { if (!this.closed && !peer.destroyed) peer.reconnect(); });
     peer.on('connection', c => {
-      if (!this.host || this.connection || c.metadata?.game !== 'neon-wing-v1') {
+      if (!this.host || this.connection || c.metadata?.game !== 'neon-wing-city-v2') {
         c.on('open', () => { c.send({ type: 'reject', reason: 'Room is full or incompatible.' }); setTimeout(() => c.close(), 300); });
         return;
       }
@@ -54,7 +54,7 @@ export class PeerSession {
     this.host = false; this.code = code.toUpperCase();
     if (!/^[A-Z0-9]{4}$/.test(this.code)) throw new Error('Enter a four-character room code.');
     await this.openPeer();
-    this.attach(this.peer.connect(this.code, { reliable: true, serialization: 'json', metadata: { game: 'neon-wing-v1' } }));
+    this.attach(this.peer.connect(this.code, { reliable: true, serialization: 'json', metadata: { game: 'neon-wing-city-v2' } }));
     this.connectTimeout = setTimeout(() => this.fail('Could not reach the host. Check the code or try another network.'), 18000);
   }
   attach(connection) {

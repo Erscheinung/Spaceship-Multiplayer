@@ -52,3 +52,32 @@ test('long run stays bounded and finite', () => {
   }
   assert.ok(sim.state.time > 179); assert.ok(Number.isFinite(sim.state.score));
 });
+
+test('city towers damage and push pilots clear, with invulnerability preventing repeated hits', () => {
+  const sim = new Simulation({ solo: true }); sim.spawnClock = Infinity;
+  // First tower reaches the pilot after a full, visible approach.
+  sim.state.time = 76 / 14 - STEP;
+  const p = sim.state.players[0]; p.x = 0; p.z = 8; p.invulnerable = 0;
+  sim.tick(); assert.equal(p.hp, 4); assert.ok(Math.abs(p.x) >= 4.5);
+  p.x=0; sim.tick(); assert.equal(p.hp, 4); assert.ok(Math.abs(p.x) >= 4.5);
+});
+test('city route is deterministic, bounded, leaves flyable gaps and travels at flight speed', async () => {
+  const { cityObstacles, FLIGHT_SPEED, hitsBuilding } = await import('../src/lib/game/course.js');
+  for (const time of [0, 5, 60, 180, 10000]) {
+    const towers = cityObstacles(time);
+    assert.deepEqual(towers, cityObstacles(time)); assert.ok(towers.length <= 6);
+    for (const tower of towers) {
+      assert.ok(!hitsBuilding({x: -13, z: tower.z}, tower));
+      assert.ok(!hitsBuilding({x: 13, z: tower.z}, tower));
+      const next = cityObstacles(time + STEP).find(b => b.id === tower.id);
+      if (next) assert.ok(Math.abs(next.z - tower.z - FLIGHT_SPEED * STEP) < 1e-9);
+    }
+  }
+});
+test('solid towers absorb shots before they can damage enemies behind them', () => {
+  const sim = new Simulation({ solo:true });sim.spawnClock=Infinity;
+  sim.state.time=68/14-STEP;sim.state.players[0].cooldown=10;
+  sim.state.bullets.push({id:1,owner:0,x:0,z:0,vx:0,vz:0,life:1});
+  sim.state.rocks.push({id:2,x:0,z:0,r:1,hp:2,speed:0});
+  sim.tick();assert.equal(sim.state.bullets.length,0);assert.equal(sim.state.rocks[0].hp,2);assert.equal(sim.state.score,0);
+});

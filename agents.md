@@ -35,3 +35,14 @@ Deliver a complete locally testable, Vercel-deployable SvelteKit + pure Three.js
 
 ## Session continuity
 The assistant cannot inspect the user's five-hour usage quota. Update this log at milestones and commit verified work before handing off. Preserve user changes. If interrupted, inspect `git status`, this file and README; run `npm run check`, `npm test`, `npm run build` and continue unchecked work. No deployment is required by the initial request; repository must be deployable with the Vercel CLI.
+
+## Illustrated city branch — September 6, 2026
+- User requested a separate branch, a more immersive centered flight view, meaningful navigation through buildings, better phone framing, and a visual direction closer to https://messenger.abeto.co; explicitly requested commit and push, with no Blender.
+- Branch: `feat/illustrated-city-flight`. Replaced neon wireframe scenery with original procedural outlined pastel architecture, trees, street lamps, overhead infrastructure, projected ground shadows, detailed delta ships and restrained bloom/FXAA.
+- Low chase camera follows the local pilot through a deterministic winding road. Portrait uses a wider field of view instead of moving the camera away. Camera resets on launch; flight HUD is compact and has no dark scene overlay. Touch steering is also available on larger coarse-pointer screens.
+- `course.js` defines shared route geometry and road towers. Host snapshots include towers; collisions damage and push pilots clear even during damage immunity, and towers absorb bullets. This remains a forward flight corridor, not free-roaming or six-axis flight.
+- Protocol is now `neon-wing-city-v2` so old arena builds cannot silently join incompatible runs.
+- Menu rendering is capped at 24 fps. Expensive multisampling caused software-rendered multi-tab startup stalls; FXAA and the menu frame cap resolved the traced startup issue.
+- Verification: zero Svelte errors/warnings; ten simulation tests pass; all four Chromium tests pass in 53.0 seconds, covering solo/pause, two real peers with pause ownership/disconnect, mobile HUD/touch input and desktop/portrait/landscape camera projection. Test Vite used `E2E_PORT=5174` to preserve the existing local server on 5173.
+- Desktop, 402×874 portrait and landscape screenshots reviewed and saved in `docs/screenshots/`. Reference site inspected with headless Chromium; no connected Browser was available. No reference assets were copied.
+- Vercel production build succeeds. Engine is approximately 560 kB minified / 143 kB gzip; expected chunk-size advisory remains. Actual iPhone/Safari GPU performance and public-internet NAT/TURN remain unverified; no deployment performed.

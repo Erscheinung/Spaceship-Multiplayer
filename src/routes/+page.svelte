@@ -70,22 +70,22 @@
   }
 </script>
 
-<svelte:head><title>NEON WING — Survive the afterlight</title><meta name="description" content="A procedural 3D synthwave survival game. Two pilots. One frequency. Create a room and fly together over a neon city." /></svelte:head>
+<svelte:head><title>NEON WING — The scenic route</title><meta name="description" content="An illustrated 3D city flight game. Two pilots. One frequency. Dodge towers and fly together through a winding pastel city." /></svelte:head>
 
 <div class="game-canvas" bind:this={canvas}></div>
-<div class="vignette"></div>
+<div class="vignette" class:playing></div>
 <div class:in-game={playing} class="shell">
   <header>
     <a href="/" class="brand" aria-label="Neon Wing home"><span class="brand-icon">⋈</span> NEON<span>WING</span></a>
-    <div class="header-right"><span class="live-dot"></span> {playing ? `${solo ? 'PRACTICE' : 'P2P LINK'} / ${room}` : 'CO-OP SURVIVAL'} <span class="version">VOL. 01</span></div>
+    <div class="header-right"><span class="live-dot"></span> {playing ? `${solo ? 'PRACTICE' : 'P2P LINK'} / ${room}` : 'CO-OP SURVIVAL'} <span class="version">CITY / 02</span></div>
   </header>
 
   {#if !playing}
     <main class="menu-layout">
       <section class="hero">
         <p class="eyebrow"><span></span> TWO PILOTS. ONE FREQUENCY.</p>
-        <h1>SURVIVE THE<br /><em>AFTERLIGHT.</em></h1>
-        <p class="intro">The city never sleeps. Neither does the swarm.<br />Link up, lock in, and carve a path through the neon.</p>
+        <h1>TAKE THE<br /><em>SCENIC ROUTE.</em></h1>
+        <p class="intro">A little altitude. A lot of close calls.<br />Find your wingmate and thread the waking city.</p>
         <div class="hero-tags"><span>01 — EVADE</span><span>02 — EVOLVE</span><span>03 — ENDURE</span></div>
       </section>
 
@@ -118,17 +118,18 @@
         <div class="panel-bottom"><span class="live-dot"></span> WEBRTC DIRECT LINK <span>2 PLAYERS MAX</span></div>
       </section>
 
-      <div class="flight-guide"><div><span class="guide-number">01</span><p><strong>Find your flow</strong><small><kbd>W A S D</kbd> or arrow keys to move</small></p></div><div><span class="guide-number">02</span><p><strong>Let it rain</strong><small>Auto-fire targets the nearest threat</small></p></div><div><span class="guide-number">03</span><p><strong>Chase the glow</strong><small>Collect cubes. Upgrade your arsenal.</small></p></div></div>
+      <div class="flight-guide"><div><span class="guide-number">01</span><p><strong>Find your flow</strong><small><kbd>W A S D</kbd> or arrow keys to move</small></p></div><div><span class="guide-number">02</span><p><strong>Let it rain</strong><small>Auto-fire targets the nearest threat</small></p></div><div><span class="guide-number">03</span><p><strong>Chase the glow</strong><small>Collect cores. Upgrade your arsenal.</small></p></div></div>
     </main>
-    <footer><span>BUILT FOR THE NIGHT SHIFT.</span><span><i class="cyan"></i> CYAN / HOST <i class="pink"></i> MAGENTA / WINGMATE</span><span>HEADPHONES OFF. THRUSTERS ON.</span></footer>
+    <footer><span>POSTCARDS FROM THE FAST LANE.</span><span><i class="cyan"></i> CYAN / HOST <i class="pink"></i> MAGENTA / WINGMATE</span><span>HEADPHONES OFF. THRUSTERS ON.</span></footer>
   {:else}
     <div class="hud">
-      <div class="pilot-card"><span class="eyebrow">{host ? 'CYAN' : 'MAGENTA'} / YOU</span><div class="health" class:magenta={!host}>{#each Array(5) as _, i}<span class:empty={i >= (hud?.players[me]?.hp ?? 5)}></span>{/each}</div><small>RATE {hud?.players[me]?.rate ?? 0} <b>/</b> SPREAD {hud?.players[me]?.spread ?? 0}</small></div>
+      <div class="pilot-card"><span class="eyebrow">{host ? 'CYAN' : 'MAGENTA'} / YOU</span><div class="health" class:magenta={!host}>{#each Array(5) as _, i}<span class:empty={i >= (hud?.players[me]?.hp ?? 5)}></span>{/each}</div><small>RATE {hud?.players[me]?.rate ?? 0} <b>/</b> SPREAD {1 + (hud?.players[me]?.spread ?? 0) * 2}</small></div>
       <div class="run-stats"><span>SECTOR {String(hud?.wave ?? 1).padStart(2, '0')}</span><strong>{time(hud?.time)}</strong><small>{String(hud?.score ?? 0).padStart(6, '0')} PTS</small></div>
       <button class="pause-button" onclick={() => togglePause()} disabled={!!hud?.over || !!error}>Ⅱ <span>ESC / PAUSE</span></button>
     </div>
     {#if !solo}<div class="wingmate-status">WINGMATE <span class:down={hud?.players[1-me]?.hp === 0}>{hud?.players[1-me]?.hp === 0 ? 'SIGNAL LOST — KEEP FLYING' : `${hud?.players[1-me]?.hp ?? 5}/5 HULL`}</span></div>{/if}
-    <div class="game-hint">EVADE THE SWARM <span>◇</span> COLLECT NEON CUBES <span>◇</span> WEAPONS AUTO-FIRE</div>
+    <div class="route-label"><span>LOW ALTITUDE / CITY RUN</span><strong>The Afterlight District</strong></div>
+    <div class="game-hint">DODGE THE TOWERS <span>◇</span> COLLECT UPGRADE CORES <span>◇</span> WEAPONS AUTO-FIRE</div>
     <div class="touch-controls"><button aria-label="Drag to steer" class="touch-pad" onpointerdown={touchMove} onpointermove={e => { if (e.buttons) touchMove(e); }} onpointerup={() => engine.touch = { x: 0, z: 0 }} onpointercancel={() => engine.touch = { x: 0, z: 0 }}>✥</button><span>DRAG TO STEER</span></div>
     {#if paused || hud?.over || error}
       <div class="overlay"><div class="pause-panel" role="dialog" aria-modal="true" aria-label={hud?.over ? 'Run complete' : 'Flight paused'} tabindex="-1" use:focusModal>

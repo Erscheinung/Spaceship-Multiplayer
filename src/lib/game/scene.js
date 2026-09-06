@@ -2,37 +2,45 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { makeSkyline, disposeObject } from './procedural.js';
+import { makeSkyline, disposeObject, outlined } from './procedural.js';
+import { worldX, FLIGHT_SPEED, roadCenter } from './course.js';
 
 export function createScene(container) {
-  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x080611); scene.fog = new THREE.FogExp2(0x10091e, 0.012);
-  const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
-  renderer.domElement.setAttribute('aria-label', 'Neon Wing 3D flight arena'); container.appendChild(renderer.domElement);
-  const camera = new THREE.PerspectiveCamera(53, 1, 0.1, 300); camera.position.set(0, 28, 34); camera.lookAt(0, 0, -9);
-  scene.add(new THREE.AmbientLight(0x7186c9, 2)); const light = new THREE.DirectionalLight(0xffa3db, 3); light.position.set(8, 20, 10); scene.add(light);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x070611, metalness: 0.7, roughness: 0.5 })); ground.rotation.x = -Math.PI / 2; ground.position.y = -4.1; scene.add(ground);
-  const grid = new THREE.GridHelper(300, 100, 0xe51b91, 0x52205a); grid.position.y = -4; scene.add(grid);
-  const lane = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(29, 0.01, 29)), new THREE.LineBasicMaterial({ color: 0x1bc9e7, transparent: true, opacity: 0.32 })); lane.position.set(0, -3.8, 0); scene.add(lane);
-  const sun = new THREE.Group();
-  for (let i = 0; i < 15; i++) {
-    const y = (i - 7) * 1.7; const width = Math.sqrt(Math.max(0, 14 * 14 - y * y)) * 2;
-    const stripe = new THREE.Mesh(new THREE.PlaneGeometry(width, 1.2), new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(0.02 + i * 0.004, 1, 0.55).multiplyScalar(1.7), fog: false })); stripe.position.set(0, y, 0); sun.add(stripe);
-  }
-  sun.position.set(0, 9, -75); scene.add(sun);
-  const stars = new Float32Array(1100 * 3);
-  for (let i = 0; i < stars.length; i += 3) { stars[i] = (Math.random() - 0.5) * 300; stars[i + 1] = Math.random() * 100 + 8; stars[i + 2] = -Math.random() * 200; }
-  const starGeometry = new THREE.BufferGeometry(); starGeometry.setAttribute('position', new THREE.BufferAttribute(stars, 3)); scene.add(new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xbbc5ff, size: 0.18 })));
-  const city = makeSkyline(scene);
-  const composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 1.1, 0.55, 0.45); composer.addPass(bloom); const output = new OutputPass(); composer.addPass(output);
-  const resize = () => {
-    const w = container.clientWidth, h = container.clientHeight; if (!w || !h) return;
-    camera.aspect = w / h; camera.position.set(0, 28, 34);
-    if (camera.aspect < 1.15) camera.position.multiplyScalar(1.15 / camera.aspect);
-    camera.lookAt(0, 0, -9); camera.updateProjectionMatrix(); renderer.setSize(w, h); composer.setSize(w, h);
-  };
-  const observer = new ResizeObserver(resize); observer.observe(container); resize();
-  return { scene, renderer, camera, render(time) { city(time); grid.position.z = (time * 7) % 3; composer.render(); }, dispose() { observer.disconnect(); disposeObject(scene); bloom.dispose(); output.dispose(); composer.dispose(); renderer.dispose(); renderer.domElement.remove(); } };
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xa5ddd6); scene.fog = new THREE.Fog(0xa5ddd6,80,260);
+  const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.5)); renderer.toneMapping=THREE.NoToneMapping;
+  renderer.domElement.setAttribute('aria-label','Neon Wing illustrated 3D city flight'); container.appendChild(renderer.domElement);
+  const camera = new THREE.PerspectiveCamera(65,1,.1,450);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x789597,2.2));
+  const sun = new THREE.DirectionalLight(0xffefd3,2.4);sun.position.set(-35,60,-20);scene.add(sun);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1400,1400),new THREE.MeshToonMaterial({color:0x708f91})); ground.rotation.x=-Math.PI/2;ground.position.y=-4.2;scene.add(ground);
+  // A continuous curved road ribbon, updated with the same coordinate map as combat.
+  const vertices=new Float32Array(100*18), roadGeo=new THREE.BufferGeometry(); roadGeo.setAttribute('position',new THREE.BufferAttribute(vertices,3));
+  const road=new THREE.Mesh(roadGeo,new THREE.MeshBasicMaterial({color:0x769397,side:THREE.DoubleSide}));road.frustumCulled=false;scene.add(road);
+  const clouds=new THREE.Group();
+  for(let i=0;i<22;i++){
+    const c=outlined(new THREE.IcosahedronGeometry(1,1),0xeaf0d9);c.scale.set(9+i%4*3,2+i%3,4);c.position.set(Math.sin(i*23)*170,35+i%5*9,-80-i*12);clouds.add(c);
+  }scene.add(clouds);
+  const city=makeSkyline(scene);
+  const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));
+  const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.16,.3,1.1);composer.addPass(bloom);const output=new OutputPass();composer.addPass(output);const antialias=new ShaderPass(FXAAShader);composer.addPass(antialias);
+  let portrait=false, initialized=false;
+  const resize=()=>{const w=container.clientWidth,h=container.clientHeight;if(!w||!h)return;camera.aspect=w/h;portrait=camera.aspect<.85;camera.fov=portrait?78:65;camera.updateProjectionMatrix();renderer.setSize(w,h);composer.setSize(w,h);const ratio=renderer.getPixelRatio();antialias.uniforms.resolution.value.set(1/(w*ratio),1/(h*ratio));};
+  const observer=new ResizeObserver(resize);observer.observe(container);resize();
+  const look=new THREE.Vector3(), desired=new THREE.Vector3();
+  return {scene,renderer,camera,resetCamera(){initialized=false;},render(time,player={x:0,z:7},dt=1/60){
+    city(time);
+    for(let i=0;i<100;i++){
+      const z=40-i*3.5,next=z-3.5,a=roadCenter(time*FLIGHT_SPEED-z),b=roadCenter(time*FLIGHT_SPEED-next);
+      vertices.set([a-16,-4.12,z,a+16,-4.12,z,b-16,-4.12,next,a+16,-4.12,z,b+16,-4.12,next,b-16,-4.12,next],i*18);
+    }roadGeo.attributes.position.needsUpdate=true;
+    const px=worldX(player.x,player.z,time);
+    desired.set(px,2.6,player.z+(portrait?10.5:12));
+    camera.position.lerp(desired,initialized?1-Math.exp(-dt*7):1);
+    look.set(px*.8+worldX(player.x,player.z-16,time)*.2,-2,player.z-16);
+    camera.lookAt(look);initialized=true;composer.render();
+  },dispose(){observer.disconnect();disposeObject(scene);bloom.dispose();output.dispose();antialias.dispose();composer.dispose();renderer.dispose();renderer.domElement.remove();}};
 }
