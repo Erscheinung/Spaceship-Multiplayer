@@ -81,3 +81,51 @@ test('solid towers absorb shots before they can damage enemies behind them', () 
   sim.state.rocks.push({id:2,x:0,z:0,r:1,hp:2,speed:0});
   sim.tick();assert.equal(sim.state.bullets.length,0);assert.equal(sim.state.rocks[0].hp,2);assert.equal(sim.state.score,0);
 });
+
+test('boost accelerates per pilot, coasts on release, and advances through fresh city blocks', () => {
+  const sim=new Simulation();sim.spawnClock=Infinity;const p=sim.state.players[0];
+  sim.setInput(0,{x:0,z:0,boost:true,lift:true});
+  sim.tick();assert.ok(p.boost>0&&p.boost<2);
+  for(let i=0;i<120;i++)sim.tick();
+  assert.ok(p.boost>24);assert.ok(p.travel>30);assert.equal(sim.state.players[1].boost,0);
+  const speed=p.boost,position=p.z;
+  sim.setInput(0,{x:0,z:0});sim.tick();assert.ok(p.boost>0&&p.boost<speed);assert.ok(p.z<position);
+  for(let i=0;i<400;i++)sim.tick();assert.ok(p.boost<.02);
+  assert.ok(sim.state.obstacles.some(b=>Math.abs(b.z-p.z)<100));
+});
+test('lift climbs smoothly, releases into a descent and levels at cruise altitude', () => {
+  const sim=new Simulation({solo:true});sim.spawnClock=Infinity;const p=sim.state.players[0];
+  sim.setInput(0,{x:0,z:0,lift:true});for(let i=0;i<90;i++)sim.tick();
+  const altitude=p.y;assert.ok(altitude>10);assert.ok(p.vy>0);
+  sim.setInput(0,{x:0,z:0});sim.tick();assert.ok(p.vy>0); // Momentum survives the release.
+  for(let i=0;i<360;i++)sim.tick();assert.equal(p.y,0);assert.equal(p.vy,0);
+  sim.setInput(0,{x:0,z:0,lift:true});for(let i=0;i<600;i++)sim.tick();assert.equal(p.y,28);
+});
+test('clearing a rooftop avoids collision, while low flight and descending into it collide', async () => {
+  const {hitsBuilding}=await import('../src/lib/game/course.js');const tower={x:0,z:0,width:7,depth:7,height:11};
+  assert.equal(hitsBuilding({x:0,z:0,y:9},tower),false);
+  assert.equal(hitsBuilding({x:0,z:0,y:6},tower),true);
+});
+test('brutal has no assisted aim and hits only aligned targets in three dimensions', () => {
+  const sim=new Simulation({solo:true,settings:{difficulty:'brutal'}});sim.spawnClock=Infinity;
+  const p=sim.state.players[0];p.y=12;
+  sim.state.rocks=[{id:1,x:p.x+8,y:20,z:p.z-20,r:1,hp:10,speed:0}];
+  sim.tick();const shot=sim.state.bullets[0];assert.equal(shot.vx,0);assert.equal(shot.vy,0);assert.ok(shot.vz<0);
+  for(let i=0;i<30;i++)sim.tick();assert.equal(sim.state.rocks[0].hp,10);
+  sim.state.rocks=[{id:2,x:p.x,y:p.y,z:p.z-2,r:1,hp:1,speed:0}];p.cooldown=0;sim.tick();sim.tick();assert.equal(sim.state.score,100);
+});
+test('altitude separates damage and pickup attraction; difficulty and colors are validated', () => {
+  const sim=new Simulation({solo:true,settings:{difficulty:'invalid',colors:['invalid','gold']}});sim.spawnClock=Infinity;
+  assert.equal(sim.state.settings.difficulty,'normal');assert.deepEqual(sim.state.settings.colors,['cyan','gold']);
+  const p=sim.state.players[0];p.y=20;p.invulnerable=0;p.cooldown=10;
+  sim.state.rocks=[{id:1,x:p.x,z:p.z,y:0,r:1,hp:2,speed:0}];sim.state.pickups=[{id:2,x:p.x,z:p.z,y:0,type:'rate',life:5}];
+  sim.tick();assert.equal(p.hp,5);assert.equal(p.rate,0);
+});
+test('long boosted brutal run stays finite and bounded with independent pilot positions', () => {
+  const sim=new Simulation({settings:{difficulty:'brutal'},random:()=>.6});
+  sim.setInput(0,{x:0,z:0,lift:true,boost:true});
+  for(let i=0;i<10800;i++){sim.state.players.forEach(p=>p.invulnerable=10);sim.tick();}
+  assert.ok(sim.state.players[0].travel>4000);assert.equal(sim.state.players[1].travel,0);
+  assert.ok(sim.state.obstacles.length<=12);assert.ok(sim.state.rocks.length<=60);assert.ok(sim.state.bullets.length<200);
+  assert.ok(sim.state.players.every(p=>Number.isFinite(p.z)&&p.y<=28));
+});

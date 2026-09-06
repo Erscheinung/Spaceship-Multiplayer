@@ -5,10 +5,10 @@ import { FLIGHT_SPEED, roadCenter } from './course.js';
 export const COLORS = { cyan: 0x19cddd, magenta: 0xef657b, orange: 0xffa342 };
 const INK = 0x293c49;
 export const palette = [0xf3e6c8, 0xe9aa8c, 0x91bbb0, 0xe3c56f, 0xb6c9bc];
-export const toon = color => new THREE.MeshToonMaterial({ color });
+export const toon = color => new THREE.MeshToonMaterial({ color, polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1 });
 export function outlined(geometry, color) {
   const group = new THREE.Group();
-  group.add(new THREE.Mesh(geometry, toon(color)));
+  const mesh=new THREE.Mesh(geometry, toon(color));mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);
   group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), new THREE.LineBasicMaterial({ color: INK })));
   return group;
 }
@@ -26,12 +26,12 @@ function bake(group) {
     else { const color = o.material.color.getHex(); if (!meshes.has(color)) meshes.set(color, []); meshes.get(color).push(geo); }
   });
   const result = new THREE.Group();
-  for (const [color, geometries] of meshes) { result.add(new THREE.Mesh(mergeGeometries(geometries), toon(color))); geometries.forEach(g => g.dispose()); }
+  for (const [color, geometries] of meshes) { const mesh=new THREE.Mesh(mergeGeometries(geometries), toon(color));mesh.castShadow=true;mesh.receiveShadow=true;result.add(mesh); geometries.forEach(g => g.dispose()); }
   if (lines.length) { result.add(new THREE.LineSegments(mergeGeometries(lines), new THREE.LineBasicMaterial({ color: INK }))); lines.forEach(g => g.dispose()); }
   disposeObject(group); return result;
 }
-export function makeShip(id) {
-  const group = new THREE.Group(), color = id ? COLORS.magenta : COLORS.cyan;
+export function makeShip(id, selectedColor) {
+  const group = new THREE.Group(), color = selectedColor ?? (id ? COLORS.magenta : COLORS.cyan);
   const shape = new THREE.Shape(); shape.moveTo(0,-2); shape.lineTo(1.75,1.2); shape.lineTo(.55,.85); shape.lineTo(0,1.5); shape.lineTo(-.55,.85); shape.lineTo(-1.75,1.2); shape.closePath();
   const geo = new THREE.ExtrudeGeometry(shape,{depth:.22, bevelEnabled:false}); geo.rotateX(Math.PI/2);
   group.add(outlined(geo, 0xf7eed9));
@@ -52,15 +52,6 @@ export function makePickup(type) {
   const group = outlined(new THREE.OctahedronGeometry(.65),type==='rate'?COLORS.cyan:COLORS.magenta);
   const ring = new THREE.Mesh(new THREE.TorusGeometry(.95,.035,4,20),new THREE.MeshBasicMaterial({color:0xfff2ba})); group.add(ring); return group;
 }
-function groundShadow(width, depth, height) {
-  const shape = new THREE.Shape();
-  const dx = height * .65, dz = height * .35;
-  shape.moveTo(-width/2, -depth/2); shape.lineTo(width/2, -depth/2);
-  shape.lineTo(width/2+dx, depth/2+dz); shape.lineTo(-width/2+dx, depth/2+dz); shape.lineTo(-width/2,depth/2); shape.closePath();
-  const geo = new THREE.ShapeGeometry(shape); geo.rotateX(Math.PI/2);
-  const mesh = new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:0x3b555e,transparent:true,opacity:.23,side:THREE.DoubleSide,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1}));
-  mesh.position.y=-4.06; return mesh;
-}
 export function makeTower(b) {
   const g = new THREE.Group();
   box(g,0,b.height/2-4,0,b.width,b.height,b.depth,palette[b.id%palette.length]);
@@ -72,7 +63,7 @@ export function makeTower(b) {
   box(g,0,-2.8,b.depth/2+.08,1.8,2.3,.16,0x335160);
   box(g,0,-3.65,0,b.width+1,.3,b.depth+1,0xf2c35d);
   for(let i=0;i<5;i++) box(g,(i-2)*b.width/5,-3.43,b.depth/2+.6,.55,.06,.9,INK);
-  const result=bake(g);result.add(groundShadow(b.width,b.depth,b.height));return result;
+  return bake(g);
 }
 function makeBlock(index) {
   const g = new THREE.Group();
@@ -107,13 +98,13 @@ function makeBlock(index) {
   }
   for(let z=-12;z<=12;z+=8) box(g,0,-4, z,.16,.035,3.5,0xf1e4bb);
   const result=bake(g);
-  for(const z of [-10.5,0,10.5]) { const shadow=groundShadow(8,9,17);shadow.position.x=-21;shadow.position.z=z;result.add(shadow); }
+
   return result;
 }
 export function makeSkyline(scene) {
   const blocks=Array.from({length:12},(_,i)=>{const g=makeBlock(i);scene.add(g);return g;});
-  return time => blocks.forEach((g,i)=>{
-    const z=((i*32+time*FLIGHT_SPEED+64)%384)-320;
+  return (time, viewZ = 0) => blocks.forEach((g,i)=>{
+    const z=(((i*32+time*FLIGHT_SPEED-viewZ+64)%384+384)%384)-320+viewZ;
     g.position.set(roadCenter(time*FLIGHT_SPEED-z),0,z);
     g.rotation.y=-Math.atan((roadCenter(time*FLIGHT_SPEED-z+1)-roadCenter(time*FLIGHT_SPEED-z-1))/2);
   });

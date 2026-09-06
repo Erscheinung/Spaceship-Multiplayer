@@ -21,13 +21,18 @@ For two devices on the same Wi-Fi, open the Network URL printed by Vite on the s
 
 | Action | Control |
 | --- | --- |
-| Move | WASD or arrow keys |
-| Shoot | Automatic; targets the nearest asteroid |
+| Steer | WASD or arrow keys; A/D bank into turns |
+| Boost | Hold Shift; release to coast back to cruise |
+| Climb | Hold Space; release for a smooth descent |
+| Shoot | Automatic; assisted in Scenic/Survival, straight ahead in Brutal |
 | Pause / resume | Escape or the pause button |
-| Touch movement | Drag the circular steering pad on phones and other touch screens |
+| Touch movement | Drag pad, or optional calibrated tilt in Control settings |
+| Touch boost / climb | Hold the separate BOOST / CLIMB buttons while steering |
 | Upgrade | Fly near cores to attract and collect them |
 
 - Cyan cores increase fire rate (eight levels); magenta cores add spread (up to five projectiles).
+- Select Scenic, Survival, or Brutal before launch. The host sets the shared difficulty; each pilot independently chooses cyan, coral, gold, violet, or mint. Brutal has faster spawns, double damage, and no assisted aim: align horizontally and vertically.
+- Each pilot accelerates independently from 50 to approximately 140 km/h; releasing boost eases back to cruise. Altitude ranges from 4 to 32 metres above the street. Hold climb to clear rooftops; release to descend. Enemies, shots, drops, and building collisions all account for altitude.
 - Roadside buildings establish the route; towers inside the corridor are solid hazards. Dodge left or right. Towers absorb projectiles, and colliding costs one hull point and pushes the ship clear.
 - Both ships have five hull points. Hits briefly grant invulnerability.
 - One downed pilot can spectate while the other survives; the run ends when both are down. Return to the terminal to start a new run.
@@ -79,7 +84,7 @@ Host browser ←──── direct WebRTC data channel ────→ Guest br
   20 Hz snapshots ────────────────────────────────→ interpolated visuals
 ```
 
-The four-character uppercase alphanumeric room code **is the host's Peer ID**. Code collisions retry up to eight times. A host accepts one guest with the matching protocol version (`neon-wing-city-v2`, incompatible with the original arena build) and rejects additional connections. Four characters are intended for casual invitations, not private authenticated sessions.
+The four-character uppercase alphanumeric room code **is the host's Peer ID**. Code collisions retry up to eight times. A host accepts one guest with the matching protocol version (`neon-wing-flight-v3`, incompatible with the original arena build) and rejects additional connections. Four characters are intended for casual invitations, not private authenticated sessions.
 
 `Simulation` owns movement limits, spawns, auto-fire, collision detection, damage, drops, upgrades, score and run completion. Guests send only normalized movement intent and their pause state. Input is validated for finite coordinates and normalized by the host; stale input expires after 300 ms. Guests never submit health changes, hits, or enemies. Guest visuals interpolate toward snapshots; there is no rollback, client prediction, host migration, or reconnect-to-run support.
 
@@ -101,7 +106,11 @@ Copy `.env.example` to `.env` if you want a custom signaling service or TURN rel
 | `PUBLIC_TURN_USERNAME` | TURN username |
 | `PUBLIC_TURN_CREDENTIAL` | TURN credential |
 
-All `PUBLIC_*` values are visible to browsers. Use short-lived TURN credentials for a production service; do not embed a long-lived private secret. Dynamic credential issuance is an extension point, not implemented here. Put custom values in Vercel project environment settings and redeploy. Failure to connect is shown in the terminal with a retry path. Losing the host ends the run.
+All `PUBLIC_*` values are visible to browsers. Use short-lived TURN credentials for a production service; do not embed a long-lived private secret. For coturn REST authentication, configure server-only `TURN_URLS` (comma-separated relay URLs) and `TURN_SECRET` (matching coturn’s `static-auth-secret`). `/api/ice` issues 10-minute HMAC credentials without exposing the shared secret. Set these as private Vercel environment variables. The endpoint does not provision a TURN server. Existing `PUBLIC_TURN_*` credentials remain supported for other providers. Put custom values in Vercel project environment settings and redeploy. Failure to connect is shown in the terminal with a retry path. Losing the host ends the run.
+
+Connection attempts now retry up to three times before launch; the host releases failed connection slots for those retries. Temporary signaling listeners are cleaned up after opening, so a later WebRTC error cannot accidentally trigger startup teardown. Missing-relay errors are distinguished from failures with a configured relay. These changes cannot guarantee connectivity through restrictive NATs without an operational TURN service. No TURN service has been provisioned by this change.
+
+Tilt steering requires a secure context (HTTPS), device support, and permission where the browser asks. Drag steering remains available if permission or sensors are unavailable. The tilt neutral position recalibrates after screen rotation; the CALIBRATE button resets it manually. Sensitivity is adjustable from the terminal or pause menu.
 
 ## Repository map
 
@@ -115,6 +124,8 @@ src/
   lib/
     net/PeerSession.js         PeerJS lifecycle, room IDs and protocol
     game/
+      settings.js              Validated difficulty and ship colors
+      TiltInput.js             Permission-aware mobile tilt and calibration
       course.js                Shared deterministic route and tower geometry
       simulation.js            Pure host-authoritative fixed-step game rules
       procedural.js            Batched outlined architecture, ships, rocks, cores
@@ -129,16 +140,16 @@ svelte.config.js              Vercel adapter, explicit Node 22 runtime
 agents.md                     Objective, progress and next-session handoff
 ```
 
-All meshes are generated in code. City blocks batch static geometry by material and share dark contour lines. Toon materials, warm plaster, teal glazing, trees, street lamps, overhead infrastructure and projected ground shadows establish the illustrated style. A continuous road follows the shared route function; tower layouts and collision boxes come from `course.js`. Host snapshots include tower positions. Each pilot's camera follows their own ship, keeping it near the center without pulling away in portrait mode. The view remains a forward flight corridor with lateral/forward dodging, rather than a free-roaming city or six-axis flight simulator.
+All meshes are generated in code. City blocks batch static geometry by material and share dark contour lines. Toon materials, warm plaster, teal glazing, trees, street lamps, overhead infrastructure and soft shadow maps from the actual geometry establish the illustrated style. A continuous road follows the shared route function; tower layouts and collision boxes come from `course.js`. Host snapshots include tower positions. Each pilot's camera follows their own ship, keeping it near the center without pulling away in portrait mode. The view remains a forward flight corridor with lateral/forward dodging, rather than a free-roaming city or six-axis flight simulator.
 
 The composer uses FXAA edge smoothing and restrained bloom limited to bright effects. No dark overlay covers active gameplay. No models or texture assets need downloading. Optional Google Fonts enhance the terminal typography; system fallbacks remain usable offline.
 
-The Three.js engine is dynamically imported on mount so server rendering never touches browser APIs. The engine chunk is approximately 560 kB minified (143 kB gzip); Vite may emit its standard 500 kB chunk advisory. Pixel ratio is capped at 1.5 to limit bloom cost. Full cross-device GPU performance and public-internet NAT traversal still need validation on the target devices.
+The Three.js engine is dynamically imported on mount so server rendering never touches browser APIs. The engine chunk is approximately 561 kB minified (144 kB gzip); Vite may emit its standard 500 kB chunk advisory. Pixel ratio is capped at 1.5 to limit bloom cost. Full cross-device GPU performance and public-internet NAT traversal still need validation on the target devices.
 
-Verification at handoff: Svelte checks, ten simulation tests, four Chromium integration tests and the Vercel production build pass. Dependency audit reports three low advisories through SvelteKit/cookie and three moderate advisories through the test-only PeerServer/Express/qs chain; normal `npm audit fix` did not clear these. See `agents.md` for the exact verification record and follow-up scope.
+Previous city-edition verification: Svelte checks, ten simulation tests, four Chromium integration tests and the Vercel build passed. For the mechanics update, sixteen simulation tests and a build completed before the user requested no further testing. Final networking/UI adjustments have not been rerun through checks; no browser/device testing was performed for this update. Dependency audit reports three low advisories through SvelteKit/cookie and three moderate advisories through the test-only PeerServer/Express/qs chain; normal `npm audit fix` did not clear these. See `agents.md` for the exact verification record and follow-up scope.
 
 References: [PeerJS connection API](https://peerjs.com/client/api/peer), [SvelteKit on Vercel](https://vercel.com/docs/frameworks/full-stack/sveltekit).
 
-## City edition screenshots
+## Previous city edition screenshots
 
 [Desktop flight](docs/screenshots/city-desktop.png) · [Phone portrait](docs/screenshots/city-mobile.png) · [Landscape](docs/screenshots/city-landscape.png)
