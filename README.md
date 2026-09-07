@@ -4,6 +4,14 @@ A two-player illustrated city flight survival game built with **SvelteKit + pure
 
 The illustrated direction reinterprets the outlined architecture and street-level composition of [Messenger by Abeto](https://messenger.abeto.co). All geometry is original and generated in JavaScript; no Blender, downloaded models, or copied reference assets.
 
+## Live preview
+
+[![Animated Neon Wing landing page preview](docs/screenshots/neon-wing-home.gif)](https://spaceship-multiplayer.vercel.app)
+
+<p align="center"><a href="https://spaceship-multiplayer.vercel.app"><strong>▶ Play Neon Wing live</strong></a></p>
+
+The preview is captured from the deployed home page, including the ships moving through the background. [Open the static screenshot fallback](docs/screenshots/neon-wing-home.png) if your Markdown viewer does not animate GIFs.
+
 ## Run locally
 
 Use Node **22.12+** (Node 22 LTS recommended) and npm.
