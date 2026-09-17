@@ -15,6 +15,7 @@ export class PeerSession {
     this.sequence = 0; this.receivedSequences = {};
     this.settings = flightSettings(settings);this.attempt = 0;this.hasRelay = false;
     this.events = events; this.host = false; this.connection = null; this.closed = false;
+    this.signalingReady = false; this.waitingForSignal = false;
     this.pauseFlags = [false, false]; this.started = false; this.lastSeen = Date.now();
     this.heartbeat = setInterval(() => {
       if (!this.connection?.open) return;
@@ -49,19 +50,52 @@ export class PeerSession {
       peer.once('error', failed);
     });
     if (this.closed) { peer.destroy(); throw new Error('Cancelled'); }
+    this.signalingReady = true;
     peer.on('error', e => {
+      if (this.closed || peer !== this.peer) return;
       // Peer-level WebRTC errors are not scoped to a connection: a stale attempt
       // must never tear down its replacement. The connection owns that lifecycle.
       if (e.type === 'webrtc') return;
-      if (e.type === 'peer-unavailable') { if (!this.host && !this.started) this.connectionFailed(this.connection); return; }
-      if (e.type === 'network' || e.type === 'disconnected') { this.events.status?.('Reconnecting to the room directory…'); return; }
+      if (e.type === 'peer-unavailable') {
+        if (!this.host && !this.started) this.connectionFailed(this.connection);
+        return;
+      }
+      if (e.type === 'network' || e.type === 'disconnected') {
+        this.signalingReady = false;
+        this.events.status?.('Reconnecting to the room directory…');
+        if (!this.host && !this.started && this.connection && !this.connection.open) this.connectionFailed(this.connection);
+        return;
+      }
       this.fail(`Network error: ${e.message}`);
     });
-    peer.on('disconnected', () => { if (!this.closed && !peer.destroyed) peer.reconnect(); });
+    peer.on('open', () => {
+      if (this.closed || peer !== this.peer) return;
+      this.signalingReady = true;
+      if (this.waitingForSignal && !this.closed && !this.host && !this.started) {
+        this.waitingForSignal = false;
+        clearTimeout(this.retryTimer); this.retryTimer = null;
+        this.connectGuest();
+      }
+    });
+    peer.on('disconnected', () => {
+      this.signalingReady = false;
+      if (!this.closed && !peer.destroyed) {
+        try { peer.reconnect(); } catch { /* A concurrent reconnect/open event owns recovery. */ }
+      }
+    });
     peer.on('connection', c => {
-      if (!this.host || this.connection || c.metadata?.game !== PROTOCOL) {
+      if (this.closed || !this.host || c.metadata?.game !== PROTOCOL) {
         c.on('open', () => { c.send({ type: 'reject', reason: 'Room is full or incompatible.' }); setTimeout(() => c.close(), 300); });
         return;
+      }
+      // A guest may retry while the host's previous ICE negotiation is still
+      // pending. Release that unusable slot so the replacement can be adopted.
+      if (this.connection) {
+        if (this.started || this.connection.open) {
+          c.on('open', () => { c.send({ type: 'reject', reason: 'Room is full or incompatible.' }); setTimeout(() => c.close(), 300); });
+          return;
+        }
+        this.connectionFailed(this.connection);
       }
       this.settings.colors[1] = Object.hasOwn(SHIP_COLORS,c.metadata?.color) ? c.metadata.color : 'coral';
       this.attach(c);
@@ -82,7 +116,17 @@ export class PeerSession {
     this.connectGuest();
   }
   connectGuest() {
-    if(this.closed) return;
+    if(this.closed || this.host || this.started || !this.peer || this.peer.destroyed) return;
+    if (this.connection?.open) return;
+    if(this.peer.disconnected || !this.peer.open || !this.signalingReady) {
+      this.waitingForSignal = true;
+      this.events.status?.('Waiting for the room directory to reconnect…');
+      if (this.peer.disconnected) {
+        try { this.peer.reconnect(); } catch { /* The disconnected event already scheduled recovery. */ }
+      }
+      return;
+    }
+    this.waitingForSignal = false;
     this.attempt++;
     if (this.attempt === 3 && this.hasRelay) this.peer.options.config.iceTransportPolicy = 'relay';
     this.events.status?.(this.attempt === 3 && this.hasRelay ? 'Trying a dedicated relay route…' : `Finding the fastest route · attempt ${this.attempt}/3…`);
@@ -94,7 +138,12 @@ export class PeerSession {
     clearTimeout(this.connectTimeout); clearTimeout(this.disconnectTimer); clearInterval(this.readyTimer); this.connection=null;connection.close();
     if (!this.started) {
       if(this.host) { this.events.status?.('Connection interrupted. Waiting for your wingmate to retry…'); return; }
-      if(this.attempt<3) { this.events.status?.('Route unavailable. Retrying automatically…'); this.retryTimer=setTimeout(()=>this.connectGuest(),800);return; }
+      if(this.attempt<3) {
+        this.events.status?.('Route unavailable. Retrying automatically…');
+        clearTimeout(this.retryTimer);
+        this.retryTimer=setTimeout(()=>{ this.retryTimer=null; this.connectGuest(); },800);
+        return;
+      }
     }
     this.fail(this.hasRelay
       ? 'The direct and relay connection could not be established. Check that the TURN relay credentials and UDP/TCP ports are valid, then reconnect.'
