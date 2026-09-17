@@ -1,5 +1,11 @@
 # NEON WING — objective and resume log
 
+## Multiplayer diagnosis — September 17, 2026
+- Worked directly, without subagents, as requested. Live `https://spaceship-multiplayer.vercel.app/api/ice` returned HTTP 200 with an empty server list. The existing local Metered credentials returned HTTP 200 with five ICE servers including TURN. Production is missing relay configuration; retries alone cannot fix cross-network connectivity.
+- Missing server relay configuration now returns descriptive HTTP 503; clients still attempt direct connections, but explicitly show relay unavailability. Added an overall 85-second guest join deadline after signaling opens and a ten-second launch-handshake deadline, with cleanup on successful launch/destroy.
+- Four focused network regression tests pass; Svelte check reports zero errors/warnings. Full unit suite: 16 pass, four failures in unchanged simulation/course assertions. Two-peer browser test did not run because its dev server failed to start within 60 seconds. Production build stalled at transformation and was terminated; no successful build or end-to-end result claimed.
+- Vercel saved CLI authentication was rejected with `invalidToken`; requested user run `npx vercel login`. Still required: install existing local METERED_DOMAIN/METERED_API_KEY as private Production environment variables, redeploy, verify deployed `/api/ice` and actual relay connection. No credentials committed or printed.
+
 ## Objective
 Deliver a complete locally testable, Vercel-deployable SvelteKit + pure Three.js two-player synthwave survival game. Use PeerJS/WebRTC, four-character rooms, host-authoritative combat, synced Escape pause, procedural assets, bloom, upgrades, and scaling difficulty.
 

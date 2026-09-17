@@ -28,7 +28,7 @@ export async function GET() {
     catch { return json({ iceServers: [], error: 'Relay credentials unavailable. Retry in a moment.' }, { status: 503, headers }); }
   }
   const urls = (env.TURN_URLS || '').split(',').map(s => s.trim()).filter(s => /^turns?:/.test(s));
-  if (!env.TURN_SECRET || !urls.length) return json({ iceServers: [] }, { headers });
+  if (!env.TURN_SECRET || !urls.length) return json({ iceServers: [], error: 'This deployment has no TURN relay configured. Set METERED_DOMAIN and METERED_API_KEY in Vercel and redeploy.' }, { status: 503, headers });
   const username = `${Math.floor(Date.now()/1000)+600}:${randomBytes(8).toString('hex')}`;
   const credential = createHmac('sha1', env.TURN_SECRET).update(username).digest('base64');
   return json({ iceServers: [{ urls, username, credential }] }, { headers });

@@ -34,6 +34,7 @@ export class PeerSession {
     } catch { this.relayWarning = 'Relay credential request timed out'; }
     if (env.PUBLIC_TURN_URL) iceServers.push({ urls: env.PUBLIC_TURN_URL.split(',').map(s=>s.trim()), username: env.PUBLIC_TURN_USERNAME, credential: env.PUBLIC_TURN_CREDENTIAL });
     this.hasRelay = iceServers.some(s => [s.urls].flat().some(u => /^turns?:/.test(u)));
+    if (!this.hasRelay) this.relayWarning ||= 'This deployment has no TURN relay configured. Set METERED_DOMAIN and METERED_API_KEY in Vercel and redeploy.';
     return { debug: 0, ...(env.PUBLIC_PEER_HOST ? { host: env.PUBLIC_PEER_HOST, port: Number(env.PUBLIC_PEER_PORT || 443), path: env.PUBLIC_PEER_PATH || '/', secure: env.PUBLIC_PEER_SECURE !== 'false' } : {}), config: { iceServers, iceCandidatePoolSize: 4 } };
   }
   async openPeer(id) {
@@ -113,6 +114,9 @@ export class PeerSession {
     this.host = false; this.code = code.toUpperCase();
     if (!/^[A-Z0-9]{4}$/.test(this.code)) throw new Error('Enter a four-character room code.');
     await this.openPeer();
+    // Covers signaling recovery and the application handshake as well as ICE.
+    // Per-attempt timers alone cannot bound waits without a live connection.
+    this.joinTimeout = setTimeout(() => this.fail(`Joining timed out. ${this.relayWarning || 'Keep the host lobby open and try again.'}`), 85000);
     this.connectGuest();
   }
   connectGuest() {
@@ -129,7 +133,7 @@ export class PeerSession {
     this.waitingForSignal = false;
     this.attempt++;
     if (this.attempt === 3 && this.hasRelay) this.peer.options.config.iceTransportPolicy = 'relay';
-    this.events.status?.(this.attempt === 3 && this.hasRelay ? 'Trying a dedicated relay route…' : `Finding the fastest route · attempt ${this.attempt}/3…`);
+    this.events.status?.(this.attempt === 3 && this.hasRelay ? 'Trying a dedicated relay route…' : `Connecting · attempt ${this.attempt}/3${this.hasRelay ? '' : ' · relay unavailable; direct connection only'}…`);
     this.attach(this.peer.connect(this.code, { reliable:false, serialization:'binary', metadata:{game:PROTOCOL,color:this.settings.colors[0]} }));
 
   }
@@ -147,7 +151,7 @@ export class PeerSession {
     }
     this.fail(this.hasRelay
       ? 'The direct and relay connection could not be established. Check that the TURN relay credentials and UDP/TCP ports are valid, then reconnect.'
-      : `Room unavailable or no route between devices. Check the code and keep the host's lobby open. ${this.relayWarning || 'Configure TURN for restrictive networks.'}`);
+      : `Room unavailable or no route between devices. Check the code and keep the host's lobby open. ${this.relayWarning}`);
   }
   attach(connection) {
     this.connection=connection;
@@ -163,7 +167,12 @@ export class PeerSession {
       }
       if (pc.iceConnectionState === 'failed') this.connectionFailed(connection);
     });
-    connection.on('open',()=>{if(connection!==this.connection)return;clearTimeout(this.connectTimeout);this.lastSeen=Date.now();this.events.status?.('Route established · synchronizing launch…');this.events.connected?.();});
+    connection.on('open',()=>{
+      if(connection!==this.connection || this.closed)return;
+      clearTimeout(this.connectTimeout);
+      this.connectTimeout=setTimeout(()=>this.connectionFailed(connection),10000);
+      this.lastSeen=Date.now();this.events.status?.('Route established · synchronizing launch…');this.events.connected?.();
+    });
     connection.on('data',message=>{if(connection===this.connection)this.receive(message);});
     connection.on('close',()=>{if(connection!==this.connection||this.closed)return;if(this.started)this.fail('Your wingmate disconnected. This run has ended.');else this.connectionFailed(connection);});
     connection.on('error',()=>this.connectionFailed(connection));
@@ -185,11 +194,11 @@ export class PeerSession {
     if (d.type === 'pong') { if (Number.isFinite(d.sent)) this.rtt = Math.max(0, Date.now() - d.sent); return; }
     if (d.type === 'reject') { this.fail(String(d.reason)); return; }
     if (this.host) {
-      if (d.type === 'ready') { this.send({ type: 'start', settings:this.settings }); if (!this.started) { this.started = true; this.events.start?.(this.settings); } this.publishPause(); }
+      if (d.type === 'ready') { clearTimeout(this.connectTimeout); this.send({ type: 'start', settings:this.settings }); if (!this.started) { this.started = true; this.events.start?.(this.settings); } this.publishPause(); }
       if (d.type === 'input' && validInput(d.input)) this.events.input?.(d.input);
       if (d.type === 'pause-request' && typeof d.paused === 'boolean') { this.pauseFlags[1] = d.paused; this.publishPause(); }
     } else {
-      if (d.type === 'start' && !this.started) { this.started = true; clearInterval(this.readyTimer); this.settings=flightSettings(d.settings);this.events.start?.(this.settings); this.events.pause?.([...this.pauseFlags]); }
+      if (d.type === 'start' && !this.started) { this.started = true; clearTimeout(this.joinTimeout); clearTimeout(this.connectTimeout); clearInterval(this.readyTimer); this.settings=flightSettings(d.settings);this.events.start?.(this.settings); this.events.pause?.([...this.pauseFlags]); }
       if (d.type === 'snapshot' && d.state && Array.isArray(d.state.players)) this.events.snapshot?.(d.state);
       if (d.type === 'pause' && Array.isArray(d.flags) && d.flags.length === 2 && d.flags.every(f => typeof f === 'boolean')) {
         this.pauseFlags = d.flags; this.events.pause?.([...d.flags]);
@@ -203,5 +212,5 @@ export class PeerSession {
   }
   publishPause() { this.send({ type: 'pause', flags: this.pauseFlags }); this.events.pause?.([...this.pauseFlags]); }
   fail(message) { if (this.closed) return; this.events.error?.(message); this.destroy(); }
-  destroy() { this.closed = true; clearInterval(this.heartbeat); clearInterval(this.readyTimer); clearTimeout(this.disconnectTimer); clearTimeout(this.retryTimer); clearTimeout(this.connectTimeout); this.connection?.close(); this.peer?.destroy(); }
+  destroy() { this.closed = true; clearTimeout(this.joinTimeout); clearInterval(this.heartbeat); clearInterval(this.readyTimer); clearTimeout(this.disconnectTimer); clearTimeout(this.retryTimer); clearTimeout(this.connectTimeout); this.connection?.close(); this.peer?.destroy(); }
 }
