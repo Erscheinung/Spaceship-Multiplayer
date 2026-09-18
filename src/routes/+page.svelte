@@ -7,6 +7,7 @@
   let screen = 'menu', code = '', room = '', status = '', error = '', busy = false, ready = false, solo = false, host = true;
   let difficulty='normal', shipColor='cyan', controlMode='drag', sensitivity=1, tilt, controlMessage='', boostHeld=false, liftHeld=false, stick={x:0,z:0};
   let flags = [false, false], hud = null, copied = false, telemetry = { fps: 0, packetLoss: null }, replayPending = false;
+  let damageNotice = '', damageFlash = false, damageNoticeTimer;
   let steeringBoost = false;
   $: paused = flags.some(Boolean);
   $: me = host ? 0 : 1;
@@ -19,16 +20,33 @@
       if (disposed) return; Engine = game.Engine; PeerSession = net.PeerSession; initEngine();
     }).catch(e => { error = `Unable to initialize graphics: ${e.message}`; });
     tilt=new TiltInput((value,message)=>{if(message){controlMessage=message;controlMode='drag';}if(value&&playing&&!paused&&controlMode==='tilt'&&engine)engine.touch={x:value.x*sensitivity,z:value.z*sensitivity};});
-    return () => { disposed = true; tilt?.disable(); engine?.destroy(); network?.destroy(); };
+    return () => { disposed = true; clearTimeout(damageNoticeTimer); tilt?.disable(); engine?.destroy(); network?.destroy(); };
 
   });
+  function clearDamageFeedback() {
+    clearTimeout(damageNoticeTimer);
+    damageNotice = '';
+    damageFlash = false;
+  }
+  function updateHud(next) {
+    const previousHp = hud?.players?.[me]?.hp;
+    const currentHp = next?.players?.[me]?.hp;
+    hud = next;
+    if (Number.isFinite(previousHp) && Number.isFinite(currentHp) && currentHp < previousHp && !next?.over && !paused && !error) {
+      damageNotice = `HULL HIT · ${currentHp}/5`;
+      damageFlash = true;
+      clearTimeout(damageNoticeTimer);
+      damageNoticeTimer = setTimeout(() => { damageNotice = ''; damageFlash = false; }, 1800);
+    }
+    if (next?.over) clearDamageFeedback();
+  }
   function initEngine() {
-    try { engine = new Engine(canvas, { onHud: s => { hud = s; }, onStats: stats => { telemetry = stats; }, onPause: togglePause, onError: fail }); ready = true; }
+    try { engine = new Engine(canvas, { onHud: updateHud, onStats: stats => { telemetry = stats; }, onPause: togglePause, onError: fail }); ready = true; }
     catch (e) { ready = false; error = `WebGL could not start. Enable hardware acceleration and reload. ${e.message}`; }
   }
-  function fail(message) { error = message; busy = false; status = ''; replayPending = false; if (playing) { flags = [true, true]; engine?.setPaused(true); releaseFlightControls(); } }
+  function fail(message) { error = message; busy = false; status = ''; replayPending = false; clearDamageFeedback(); if (playing) { flags = [true, true]; engine?.setPaused(true); releaseFlightControls(); } }
   function start(settings = {difficulty, colors:[shipColor,'coral']}) {
-    busy = false; screen = 'game'; hud = null; flags = [false, false]; replayPending = false; telemetry = { fps: 0, packetLoss: null };
+    busy = false; screen = 'game'; hud = null; flags = [false, false]; replayPending = false; telemetry = { fps: 0, packetLoss: null }; clearDamageFeedback();
     if (settings.difficulty) difficulty = settings.difficulty;
     if (settings.colors?.[host ? 0 : 1]) shipColor = settings.colors[host ? 0 : 1];
     engine.start({ host, solo, network, settings }); boostHeld=false; liftHeld=false; steeringBoost=false; stick={x:0,z:0};tilt?.calibrate(); if (document.hidden) togglePause(true);
@@ -45,7 +63,7 @@
       telemetry: stats => { telemetry = { ...telemetry, packetLoss: stats.packetLoss, rtt: stats.rtt }; },
       replay: settings => start(settings),
       replayRequest: () => { if (hud?.over && host) replayHost(); },
-      pause: value => { flags = value; if(flags.some(Boolean))releaseFlightControls(); engine.setPaused(flags.some(Boolean) || Boolean(hud?.over)); },
+      pause: value => { flags = value; if(flags.some(Boolean)){ clearDamageFeedback(); releaseFlightControls(); } engine.setPaused(flags.some(Boolean) || Boolean(hud?.over)); },
       error: fail, status: value => status=value
     }, {difficulty,colors:[shipColor,'coral']});
     network = session;
@@ -58,12 +76,12 @@
     const next = force === true ? true : !flags[me];
     flags = flags.map((v, i) => i === me ? next : v);
     // Freeze immediately on the requesting peer; host acknowledgement reconciles it.
-    engine.setPaused(flags.some(Boolean));releaseFlightControls();
+    engine.setPaused(flags.some(Boolean)); if (flags.some(Boolean)) clearDamageFeedback(); releaseFlightControls();
     if (!solo) network.setPaused(next);
   }
   function menu() {
     network?.destroy(); network = null; engine?.destroy(); engine = null;
-    screen = 'menu'; flags = [false, false]; hud = null; error = ''; busy = false; status = ''; replayPending = false; telemetry = { fps: 0, packetLoss: null }; initEngine();
+    screen = 'menu'; flags = [false, false]; hud = null; error = ''; busy = false; status = ''; replayPending = false; telemetry = { fps: 0, packetLoss: null }; clearDamageFeedback(); initEngine();
   }
   async function copy() { try { await navigator.clipboard.writeText(room); copied = true; setTimeout(() => copied = false, 1500); } catch { status = 'Select and copy the room code below.'; } }
   async function changeControls(value) {
@@ -178,22 +196,20 @@
     <footer><span>POSTCARDS FROM THE FAST LANE.</span><span><i class="cyan"></i> YOUR COLOR <i class="pink"></i> YOUR WINGMATE</span><span>HEADPHONES OFF. THRUSTERS ON.</span></footer>
   {:else}
     <div class="hud">
-      <div class="pilot-card"><span class="eyebrow">{(hud?.settings?.colors[me] ?? shipColor).toUpperCase()} / YOU</span><div class="health" style:--ship-color={SHIP_COLORS[hud?.settings?.colors[me] ?? shipColor]}>{#each Array(5) as _, i}<span class:empty={i >= (hud?.players[me]?.hp ?? 5)}></span>{/each}</div><small>RATE {hud?.players[me]?.rate ?? 0} <b>/</b> SPREAD {1 + (hud?.players[me]?.spread ?? 0) * 2}</small></div>
+      <div class="pilot-card" class:damage-flash={damageFlash}><span class="eyebrow">{(hud?.settings?.colors[me] ?? shipColor).toUpperCase()} / YOU</span><div class="health" role="img" aria-label={`Hull integrity: ${hud?.players[me]?.hp ?? 5} of 5`} style:--ship-color={SHIP_COLORS[hud?.settings?.colors[me] ?? shipColor]}>{#each Array(5) as _, i}<span class:empty={i >= (hud?.players[me]?.hp ?? 5)} aria-hidden="true">♥</span>{/each}</div><small>RATE {hud?.players[me]?.rate ?? 0} <b>/</b> SPREAD {1 + (hud?.players[me]?.spread ?? 0) * 2}</small>{#if !paused && !hud?.over && !error}<div class="telemetry-strip" aria-label="Flight telemetry"><span>FPS <b>{telemetry.fps || '—'}</b></span><span>PKT <b>{solo || telemetry.packetLoss == null ? '—' : `${Math.round(telemetry.packetLoss * 100)}%`}</b></span></div>{/if}{#if damageNotice && !paused && !hud?.over && !error}<div class="damage-feedback" role="status" aria-live="polite" aria-atomic="true">{damageNotice}</div>{/if}</div>
       <div class="run-stats"><span>SECTOR {String(hud?.wave ?? 1).padStart(2, '0')}</span><strong>{time(hud?.time)}</strong><small>{String(hud?.score ?? 0).padStart(6, '0')} PTS</small></div>
       <button class="pause-button" onclick={() => togglePause()} disabled={!!hud?.over || !!error}>Ⅱ <span>ESC / PAUSE</span></button>
     </div>
     {#if !solo}<div class="wingmate-status">WINGMATE <span class:down={hud?.players[1-me]?.hp === 0}>{hud?.players[1-me]?.hp === 0 ? 'SIGNAL LOST — KEEP FLYING' : `${hud?.players[1-me]?.hp ?? 5}/5 HULL`}</span></div>{/if}
     <div class="flight-instruments"><span>SPD <b data-testid="speed">{Math.round((FLIGHT_SPEED+(hud?.players[me]?.boost ?? 0))*3.6)}</b> km/h</span><span>ALT <b data-testid="altitude">{Math.round((hud?.players[me]?.y ?? 0)+4)}</b> m</span><span>{(hud?.settings?.difficulty ?? difficulty).toUpperCase()}</span></div>
-    <div class="telemetry-strip" aria-label="Flight telemetry"><span>FPS <b>{telemetry.fps || '—'}</b></span><span>PKT <b>{solo || telemetry.packetLoss == null ? '—' : `${Math.round(telemetry.packetLoss * 100)}%`}</b></span></div>
     <div class="route-label"><span>SHIFT / BOOST · SPACE / CLIMB</span><strong>The Afterlight Skyway</strong></div>
     <div class="game-hint">BANK THROUGH THE SKYWAY <span>◇</span> COLLECT UPGRADE CORES <span>◇</span> {hud?.settings?.difficulty==='brutal' ? 'ALIGN YOUR SHOTS' : 'WEAPONS AUTO-FIRE'}</div>
-    <div class="touch-controls">
+    {#if !paused && !hud?.over && !error}<div class="touch-controls">
       {#if controlMode==='drag'}<button aria-label="Drag to steer" class:boost-active={steeringBoost} class="touch-pad" onpointerdown={touchMove} onpointermove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))touchMove(e);}} onpointerup={releaseSteering} onpointercancel={releaseSteering} onlostpointercapture={releaseSteering}><span class="touch-stick" style:transform={`translate(${stick.x*28}px,${stick.z*28}px)`}>✥</span><span class="touch-boost-badge" aria-live="polite">{steeringBoost ? 'BOOST' : ''}</span></button>{:else}<button class="calibrate" onclick={()=>tilt.calibrate()}>◎<br/>CALIBRATE TILT</button>{/if}
       <span class="touch-label">{controlMode==='drag'?(steeringBoost?'OUTER BOOST ACTIVE':'DRAG TO STEER · PULL OUT TO BOOST'):'TILT TO STEER'}</span>
-    </div>
-    <div class="flight-actions">
+    </div><div class="flight-actions">
       <button aria-label="Hold to climb" class:held={liftHeld} onpointerdown={e=>holdAction(e,'lift')} onpointerup={()=>releaseAction('lift')} onpointercancel={()=>releaseAction('lift')} onlostpointercapture={()=>releaseAction('lift')}>↑<small>CLIMB</small></button>
-    </div>
+    </div>{/if}
     {#if paused || hud?.over || error}
       <div class="overlay"><div class="pause-panel" role="dialog" aria-modal="true" aria-label={hud?.over ? 'Run complete' : 'Flight paused'} tabindex="-1" use:focusModal>
         <p class="eyebrow">{error ? 'LINK INTERRUPTED' : hud?.over ? 'END OF TRANSMISSION' : 'FREQUENCY ON HOLD'}</p>
