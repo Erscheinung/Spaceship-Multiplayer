@@ -73,3 +73,18 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
   .pilot-card{width:min(100%,220px)}
   .flight-instruments{top:clamp(192px,24svh,240px)}
 }
+
+/* Reserve the feedback row so a hit never changes the HUD's layout while
+   the flight loop is running. Keep the instrument gutter compact. */
+.pilot-card{min-height:104px;contain:layout paint}
+.flight-instruments{top:clamp(156px,18svh,180px)}
+@media(max-width:680px),(pointer:coarse){
+  .pilot-card{width:min(100%,180px);min-height:98px}
+  .flight-instruments{top:clamp(168px,20svh,190px)}
+}
+@media(max-height:500px) and (pointer:coarse){
+  .flight-instruments{top:128px}
+}
+
+/* Keep hit feedback visually clear without animating a large shadow region. */
+@keyframes damage-card-flash{0%,100%{border-color:#40546188}25%{border-color:#b54f39}}
