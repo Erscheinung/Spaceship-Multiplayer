@@ -64,3 +64,12 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
 @keyframes damage-card-flash{0%,100%{border-color:#40546188;box-shadow:3px 3px 0 #293e4920}25%{border-color:#b54f39;box-shadow:0 0 0 3px #b54f3933,3px 3px 0 #293e4920}}
 @media(max-width:680px),(pointer:coarse){.telemetry-strip{position:static;top:auto;left:auto;gap:7px;margin-top:7px;padding:0;font-size:6px}.telemetry-strip b{font-size:7px}}
 @media(prefers-reduced-motion:reduce){.pilot-card.damage-flash{animation:none;border-color:#b54f39}}
+
+/* Keep the pilot telemetry card roomy enough for its complete status stack,
+   while leaving a clear responsive gutter before the flight instruments. */
+.pilot-card{width:clamp(220px,26vw,385px)}
+.flight-instruments{top:clamp(178px,22svh,220px)}
+@media(max-width:680px),(pointer:coarse){
+  .pilot-card{width:min(100%,220px)}
+  .flight-instruments{top:clamp(192px,24svh,240px)}
+}
