@@ -2,8 +2,9 @@ import { flightSettings, SHIP_COLORS } from '../game/settings.js';
 import Peer from 'peerjs';
 import { env } from '$env/dynamic/public';
 
-const PROTOCOL = 'neon-wing-skyway-v4';
+const PROTOCOL = 'neon-wing-skyway-v5';
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const STREAM_TYPES = new Set(['input', 'snapshot']);
 export function roomCode() {
   return [...crypto.getRandomValues(new Uint8Array(4))].map(n => alphabet[n % alphabet.length]).join('');
 }
@@ -12,7 +13,8 @@ const validInput = d => d && Number.isFinite(d.x) && Number.isFinite(d.z);
 // Transport and protocol live here; clients can never submit hits or spawn entities.
 export class PeerSession {
   constructor(events = {}, settings = {}) {
-    this.sequence = 0; this.receivedSequences = {};
+    this.sequence = 0; this.receivedSequences = {}; this.streamSequences = { input: 0, snapshot: 0 }; this.receivedStreams = {}; this.replayId = 0; this.lastReplayId = 0; this.replayTimer = null; this.replayRequestId = 0; this.lastReplayRequestId = 0; this.replayRequestTimer = null;
+    this.packetStats = { received: 0, lost: 0, dropped: 0 };
     this.settings = flightSettings(settings);this.attempt = 0;this.hasRelay = false;
     this.events = events; this.host = false; this.connection = null; this.closed = false;
     this.signalingReady = false; this.waitingForSignal = false;
@@ -179,16 +181,26 @@ export class PeerSession {
   }
   send(message) {
     if (!this.connection?.open || this.closed) return;
+    const outgoing = { ...message };
+    if (STREAM_TYPES.has(outgoing.type)) outgoing.streamSequence = ++this.streamSequences[outgoing.type];
     // Drop disposable updates instead of accumulating seconds of stale state.
-    if (['input', 'snapshot'].includes(message.type) && !message.state?.over && this.connection.dataChannel?.bufferedAmount > 16000) return;
-    try { this.connection.send({ ...message, sequence: ++this.sequence }); } catch { this.fail('Could not send to your wingmate.'); }
+    if (STREAM_TYPES.has(outgoing.type) && !outgoing.state?.over && this.connection.dataChannel?.bufferedAmount > 16000) { this.packetStats.dropped++; this.events.telemetry?.(this.telemetry()); return; }
+    try { this.connection.send({ ...outgoing, sequence: ++this.sequence }); } catch { this.fail('Could not send to your wingmate.'); }
   }
   receive(d) {
     if (!d || typeof d !== 'object' || typeof d.type !== 'string') return;
     this.lastSeen = Date.now();
-    if (['input', 'snapshot', 'pause', 'pause-request'].includes(d.type)) {
+    if (['input', 'snapshot', 'pause', 'pause-request', 'replay', 'replay-request'].includes(d.type)) {
       if (!Number.isSafeInteger(d.sequence) || d.sequence <= (this.receivedSequences[d.type] ?? -1)) return;
       this.receivedSequences[d.type] = d.sequence;
+    }
+    if (STREAM_TYPES.has(d.type) && Number.isSafeInteger(d.streamSequence)) {
+      const previous = this.receivedStreams[d.type] ?? 0;
+      if (d.streamSequence <= previous) return;
+      this.packetStats.lost += Math.max(0, d.streamSequence - previous - 1);
+      this.receivedStreams[d.type] = d.streamSequence;
+      this.packetStats.received++;
+      this.events.telemetry?.(this.telemetry());
     }
     if (d.type === 'ping') { this.send({ type: 'pong', sent: d.sent }); return; }
     if (d.type === 'pong') { if (Number.isFinite(d.sent)) this.rtt = Math.max(0, Date.now() - d.sent); return; }
@@ -197,12 +209,14 @@ export class PeerSession {
       if (d.type === 'ready') { clearTimeout(this.connectTimeout); this.send({ type: 'start', settings:this.settings }); if (!this.started) { this.started = true; this.events.start?.(this.settings); } this.publishPause(); }
       if (d.type === 'input' && validInput(d.input)) this.events.input?.(d.input);
       if (d.type === 'pause-request' && typeof d.paused === 'boolean') { this.pauseFlags[1] = d.paused; this.publishPause(); }
+      if (d.type === 'replay-request' && this.started && Number.isSafeInteger(d.requestId) && d.requestId > this.lastReplayRequestId) { this.lastReplayRequestId = d.requestId; this.events.replayRequest?.(); }
     } else {
       if (d.type === 'start' && !this.started) { this.started = true; clearTimeout(this.joinTimeout); clearTimeout(this.connectTimeout); clearInterval(this.readyTimer); this.settings=flightSettings(d.settings);this.events.start?.(this.settings); this.events.pause?.([...this.pauseFlags]); }
       if (d.type === 'snapshot' && d.state && Array.isArray(d.state.players)) this.events.snapshot?.(d.state);
       if (d.type === 'pause' && Array.isArray(d.flags) && d.flags.length === 2 && d.flags.every(f => typeof f === 'boolean')) {
         this.pauseFlags = d.flags; this.events.pause?.([...d.flags]);
       }
+      if (d.type === 'replay' && d.settings && Number.isSafeInteger(d.replayId) && d.replayId > this.lastReplayId) { this.lastReplayId = d.replayId; this.settings = flightSettings(d.settings); this.pauseFlags = [false, false]; this.events.replay?.(this.settings); }
     }
   }
   ready() { if (this.host) return; this.send({ type: 'ready' }); clearInterval(this.readyTimer); this.readyTimer = setInterval(() => { if (!this.started) this.send({ type: 'ready' }); }, 600); }
@@ -210,7 +224,39 @@ export class PeerSession {
     this.pauseFlags[this.host ? 0 : 1] = paused;
     if (this.host) this.publishPause(); else this.send({ type: 'pause-request', paused });
   }
+  replay(settings = this.settings) {
+    if (!this.host || this.closed) return;
+    this.settings = flightSettings(settings);
+    this.pauseFlags = [false, false];
+    clearTimeout(this.replayTimer);
+    const replayId = ++this.replayId; let attempts = 0;
+    const announce = () => {
+      if (this.closed || attempts++ >= 5) return;
+      this.send({ type: 'replay', replayId, settings: this.settings });
+      this.replayTimer = setTimeout(announce, 350);
+    };
+    announce();
+    this.events.replay?.(this.settings);
+  }
+  requestReplay() {
+    if (this.closed) return;
+    if (this.host) this.replay();
+    else {
+      clearTimeout(this.replayRequestTimer);
+      const requestId = ++this.replayRequestId; let attempts = 0;
+      const announce = () => {
+        if (this.closed || attempts++ >= 4) return;
+        this.send({ type: 'replay-request', requestId });
+        this.replayRequestTimer = setTimeout(announce, 350);
+      };
+      announce();
+    }
+  }
   publishPause() { this.send({ type: 'pause', flags: this.pauseFlags }); this.events.pause?.([...this.pauseFlags]); }
+  telemetry() {
+    const total = this.packetStats.received + this.packetStats.lost + this.packetStats.dropped;
+    return { packetLoss: total ? (this.packetStats.lost + this.packetStats.dropped) / total : null, rtt: Number.isFinite(this.rtt) ? this.rtt : null, received: this.packetStats.received, lost: this.packetStats.lost, dropped: this.packetStats.dropped };
+  }
   fail(message) { if (this.closed) return; this.events.error?.(message); this.destroy(); }
-  destroy() { this.closed = true; clearTimeout(this.joinTimeout); clearInterval(this.heartbeat); clearInterval(this.readyTimer); clearTimeout(this.disconnectTimer); clearTimeout(this.retryTimer); clearTimeout(this.connectTimeout); this.connection?.close(); this.peer?.destroy(); }
+  destroy() { this.closed = true; clearTimeout(this.joinTimeout); clearInterval(this.heartbeat); clearInterval(this.readyTimer); clearTimeout(this.disconnectTimer); clearTimeout(this.retryTimer); clearTimeout(this.connectTimeout); clearTimeout(this.replayTimer); clearTimeout(this.replayRequestTimer); this.connection?.close(); this.peer?.destroy(); }
 }

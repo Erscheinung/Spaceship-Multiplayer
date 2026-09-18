@@ -70,3 +70,27 @@ test('successful guest launch clears all connection deadlines', async () => {
   assert.deepEqual([...timers.values()].map(t => t.delay), [2000]);
   session.destroy();
 });
+
+test('stream telemetry counts sequence gaps and replay messages are idempotent', () => {
+  const { session } = setup(); const sent = []; let requests = 0;
+  session.host = true; session.started = true;
+  session.connection = { open: true, dataChannel: { bufferedAmount: 0 }, send: message => sent.push(message), close() {} };
+  session.events.replayRequest = () => requests++;
+  session.receive({ type: 'input', sequence: 1, streamSequence: 1, input: { x: 0, z: 0 } });
+  session.receive({ type: 'input', sequence: 2, streamSequence: 3, input: { x: 0, z: 0 } });
+  assert.equal(session.telemetry().lost, 1);
+  assert.equal(session.telemetry().packetLoss, 1 / 3);
+  session.receive({ type: 'replay-request', sequence: 3, requestId: 8 });
+  session.receive({ type: 'replay-request', sequence: 4, requestId: 8 });
+  assert.equal(requests, 1);
+  session.replay();
+  assert.equal(sent[0].type, 'replay'); assert.ok(Number.isSafeInteger(sent[0].replayId));
+  session.destroy();
+
+  const guestEvents = []; const guest = setup().session;
+  guest.events.replay = settings => guestEvents.push(settings);
+  guest.receive({ type: 'replay', sequence: 1, replayId: 4, settings: { difficulty: 'easy' } });
+  guest.receive({ type: 'replay', sequence: 2, replayId: 4, settings: { difficulty: 'easy' } });
+  assert.equal(guestEvents.length, 1); assert.equal(guestEvents[0].difficulty, 'easy');
+  guest.destroy();
+});

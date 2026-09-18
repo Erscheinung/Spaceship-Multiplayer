@@ -3,13 +3,14 @@ import { createScene } from './scene.js';
 import { makeShip, makeRock, makePickup, makeTower, disposeObject, COLORS } from './procedural.js';
 import { worldPosition, courseFrame, FLIGHT_SPEED, cityObstacles } from './course.js';
 import { SHIP_COLORS } from './settings.js';
-import { Simulation, STEP, advanceFlight } from './simulation.js';
+import { Simulation, STEP, CRUISE_SPEED, advanceFlight } from './simulation.js';
 
 export class Engine {
-  constructor(container, { onHud, onPause, onError }) {
-    this.world = createScene(container); this.onHud = onHud; this.onPause = onPause;
+  constructor(container, { onHud, onPause, onError, onStats }) {
+    this.world = createScene(container); this.onHud = onHud; this.onPause = onPause; this.onStats = onStats;
     this.objects = new Map(); this.keys = new Set(); this.touch = { x: 0, z: 0 }; this.actions = { boost:false, lift:false }; this.state = null;
     this.mode = 'attract'; this.localId = 0; this.paused = false; this.destroyed = false; this.accumulator = 0; this.snapshotClock = 0; this.hudClock = 0; this.attractTime = 0;
+    this.statsClock = 0; this.statsFrames = 0; this.networkStats = null; this.remoteSnapshots = []; this.presentationOffset = { x: 0, y: 0, z: 0 };
     this.ships = [makeShip(0), makeShip(1)]; this.ships.forEach((s, i) => { s.position.set(i ? 4 : -4, 0, 7); this.world.scene.add(s); });
     this.keydown = e => {
       if (this.mode === 'attract' || /INPUT|TEXTAREA|SELECT/.test(e.target?.tagName)) return;
@@ -27,12 +28,17 @@ export class Engine {
     this.frame = this.frame.bind(this); this.last = performance.now(); this.raf = requestAnimationFrame(this.frame);
   }
   start({ host = true, solo = false, network = null, settings = {} }) {
+    const wasPaused = this.paused;
+    clearInterval(this.inputTimer);
     this.network = network; this.localId = host ? 0 : 1; this.mode = host ? 'host' : 'client'; this.sim = host ? new Simulation({ solo, settings }) : null;
+    if (this.sim) this.sim.state.players[0].boost = CRUISE_SPEED;
     this.settings = settings; this.applyColors(settings.colors); this.world.resetCamera(); this.state = this.sim?.state ?? null; this.accumulator = 0; this.keys.clear(); this.paused = false;
+    this.predictedPlayer = null; this.predictionSteps = []; this.remoteSnapshots = []; this.presentationOffset = { x: 0, y: 0, z: 0 }; this.statsClock = 0; this.statsFrames = 0;
     this.inputTimer = setInterval(() => { if (this.mode === 'client') this.network?.send({ type: 'input', input: this.paused ? { x: 0, z: 0 } : this.input() }); }, 1000 / 30);
     this.last = performance.now();
+    if (wasPaused) this.raf = requestAnimationFrame(this.frame);
   }
-  input() { return { x: Number(this.keys.has('KeyD') || this.keys.has('ArrowRight')) - Number(this.keys.has('KeyA') || this.keys.has('ArrowLeft')) + this.touch.x, z: Number(this.keys.has('KeyS') || this.keys.has('ArrowDown')) - Number(this.keys.has('KeyW') || this.keys.has('ArrowUp')) + this.touch.z, boost:this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.actions.boost, lift:this.keys.has('Space') || this.actions.lift }; }
+  input() { const turbo = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.actions.boost; return { x: Number(this.keys.has('KeyD') || this.keys.has('ArrowRight')) - Number(this.keys.has('KeyA') || this.keys.has('ArrowLeft')) + this.touch.x, z: Number(this.keys.has('KeyS') || this.keys.has('ArrowDown')) - Number(this.keys.has('KeyW') || this.keys.has('ArrowUp')) + this.touch.z, boost:turbo, turbo, cruise:true, lift:this.keys.has('Space') || this.actions.lift }; }
   applyColors(colors = ['cyan','coral']) {
     this.ships?.forEach(s => disposeObject(s));
     this.ships = colors.map((color,i) => { const ship=makeShip(i, SHIP_COLORS[color] ?? SHIP_COLORS.cyan);this.world.scene.add(ship);return ship; });
@@ -42,12 +48,21 @@ export class Engine {
     if (this.mode !== 'client' || !Array.isArray(state.rocks) || !Array.isArray(state.bullets) || !Array.isArray(state.pickups) || !Array.isArray(state.effects)) return;
     if (this.state?.settings?.colors?.join() !== state.settings?.colors?.join()) this.applyColors(state.settings?.colors);
     if (this.state && state.time < this.state.time) return;
+    const previousPrediction = this.predictedPlayer;
     const collision = this.state && state.players[this.localId].hp !== this.state.players[this.localId].hp;
     state.obstacles = cityObstacles(state.time, state.players.filter(p => p.active && p.hp > 0));
+    this.remoteSnapshots.push({ time: state.time, players: state.players.map(p => ({ ...p })) });
+    this.remoteSnapshots = this.remoteSnapshots.filter(snapshot => snapshot.time >= state.time - .35).slice(-10);
     this.state = state; this.onHud(state);
     this.predictedPlayer = { ...state.players[this.localId] };
     this.predictionSteps = collision ? [] : (this.predictionSteps ?? []).filter(step => step.time > state.time);
     for (const step of this.predictionSteps) if (this.predictedPlayer.hp > 0) advanceFlight(this.predictedPlayer, step.input, Math.min(step.dt, step.time-state.time), step.time);
+    if (collision) this.presentationOffset = { x: 0, y: 0, z: 0 };
+    else if (previousPrediction) {
+      this.presentationOffset.x = Math.max(-2, Math.min(2, this.presentationOffset.x + previousPrediction.x - this.predictedPlayer.x));
+      this.presentationOffset.y = Math.max(-2, Math.min(2, this.presentationOffset.y + previousPrediction.y - this.predictedPlayer.y));
+      this.presentationOffset.z = Math.max(-2, Math.min(2, this.presentationOffset.z + previousPrediction.z - this.predictedPlayer.z));
+    }
     this.clientTime = Math.max(state.time, this.predictionSteps.at(-1)?.time ?? state.time);
     if (state.over) { this.draw(1 / 60); this.world.render(state.time, state.players[this.localId]); this.setPaused(true); }
   }
@@ -81,11 +96,44 @@ export class Engine {
         this.predictionSteps.push({ time: this.clientTime, dt: predictionDt, input });
       }
     }
-    this.attractTime += dt; this.draw(dt); this.world.render(this.renderTime(), this.mode === 'client' ? this.predictedPlayer : this.state?.players[this.localId], dt, this.state?.settings?.difficulty === 'brutal');
+    this.attractTime += dt; this.statsClock += dt; this.statsFrames++;
+    if (this.statsClock >= .5) {
+      const network = this.network?.telemetry?.() ?? this.networkStats;
+      this.onStats?.({ fps: Math.round(this.statsFrames / this.statsClock), packetLoss: network?.packetLoss ?? null, rtt: network?.rtt ?? null });
+      this.statsClock = 0; this.statsFrames = 0;
+    }
+    if (this.mode === 'client') {
+      const smoothing = Math.exp(-dt * 18);
+      this.presentationOffset.x *= smoothing; this.presentationOffset.y *= smoothing; this.presentationOffset.z *= smoothing;
+    }
+    this.draw(dt); this.world.render(this.renderTime(), this.mode === 'client' ? this.renderPlayer() : this.state?.players[this.localId], dt, this.state?.settings?.difficulty === 'brutal');
     if (this.state?.over) { this.setPaused(true); return; }
     this.raf = requestAnimationFrame(this.frame);
   }
   renderTime() { return this.mode === 'client' && this.state ? this.clientTime ?? this.state.time : this.state?.time ?? this.attractTime; }
+  remotePlayer(id) {
+    if (this.mode !== 'client' || id === this.localId || this.remoteSnapshots.length === 0) return this.state?.players[id];
+    // Keep a small authoritative presentation buffer for the wingmate. Local
+    // input remains predicted immediately; only the remote pilot is delayed a
+    // fraction of a snapshot so packet jitter does not read as rubber-banding.
+    const target = (this.state?.time ?? 0) - .08;
+    const snapshots = this.remoteSnapshots;
+    let before = snapshots[0], after = snapshots.at(-1);
+    for (let i = 0; i < snapshots.length; i++) {
+      if (snapshots[i].time <= target) before = snapshots[i];
+      if (snapshots[i].time >= target) { after = snapshots[i]; break; }
+    }
+    const a = before.players[id], b = after.players[id];
+    if (!a || !b) return this.state?.players[id];
+    const span = after.time - before.time;
+    const t = span > 0 ? Math.max(0, Math.min(1, (target - before.time) / span)) : 1;
+    const lerp = (key, fallback = 0) => (a[key] ?? fallback) + ((b[key] ?? fallback) - (a[key] ?? fallback)) * t;
+    return { ...b, x: lerp('x'), z: lerp('z'), y: lerp('y'), vx: lerp('vx'), vy: lerp('vy'), boost: lerp('boost') };
+  }
+  renderPlayer() {
+    if (this.mode !== 'client' || !this.predictedPlayer) return this.state?.players[this.localId];
+    return { ...this.predictedPlayer, x: this.predictedPlayer.x + this.presentationOffset.x, y: this.predictedPlayer.y + this.presentationOffset.y, z: this.predictedPlayer.z + this.presentationOffset.z };
+  }
   draw(dt) {
     const time = this.renderTime(), age = Math.max(0, time - (this.state?.time ?? time));
     const orient = (object, z) => {
@@ -93,8 +141,10 @@ export class Engine {
       object.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(f.right.x,f.right.y,f.right.z),new THREE.Vector3(f.up.x,f.up.y,f.up.z),new THREE.Vector3(-f.forward.x,-f.forward.y,-f.forward.z)));
     };
     this.ships.forEach((ship, i) => {
-      const source = this.state?.players[i];
-      const p = this.mode === 'client' && i === this.localId ? this.predictedPlayer : source ? {...source, z:source.z-(source.boost ?? 0)*age, x:source.x+(source.vx ?? 0)*age} : null; ship.visible = !p || (p.active && p.hp > 0);
+      const remote = this.mode === 'client' && i !== this.localId;
+      const source = remote ? this.remotePlayer(i) : this.state?.players[i];
+      const extrapolation = remote ? 0 : age;
+      const p = this.mode === 'client' && i === this.localId ? this.renderPlayer() : source ? {...source, z:source.z-(source.boost ?? 0)*extrapolation, x:source.x+(source.vx ?? 0)*extrapolation} : null; ship.visible = !p || (p.active && p.hp > 0);
       const z = p?.z ?? 7, point = worldPosition(p?.x ?? (i ? 4 : -4), (p?.y ?? 0) + Math.sin(time*4+i)*.06, z, time);
       ship.position.set(point.x,point.y,point.z);orient(ship,z);
       const bank=-(p?.vx ?? Math.sin(time)*2)/12;

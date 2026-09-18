@@ -1,11 +1,13 @@
 <script>
   import { onMount } from 'svelte';
   import { SHIP_COLORS, DIFFICULTIES } from '$lib/game/settings.js';
+  import { FLIGHT_SPEED } from '$lib/game/course.js';
   import { TiltInput } from '$lib/game/TiltInput.js';
   let canvas, engine, network, Engine, PeerSession;
   let screen = 'menu', code = '', room = '', status = '', error = '', busy = false, ready = false, solo = false, host = true;
   let difficulty='normal', shipColor='cyan', controlMode='drag', sensitivity=1, tilt, controlMessage='', boostHeld=false, liftHeld=false, stick={x:0,z:0};
-  let flags = [false, false], hud = null, copied = false;
+  let flags = [false, false], hud = null, copied = false, telemetry = { fps: 0, packetLoss: null }, replayPending = false;
+  let steeringBoost = false;
   $: paused = flags.some(Boolean);
   $: me = host ? 0 : 1;
   $: playing = screen === 'game';
@@ -21,11 +23,16 @@
 
   });
   function initEngine() {
-    try { engine = new Engine(canvas, { onHud: s => { hud = s; }, onPause: togglePause, onError: fail }); ready = true; }
+    try { engine = new Engine(canvas, { onHud: s => { hud = s; }, onStats: stats => { telemetry = stats; }, onPause: togglePause, onError: fail }); ready = true; }
     catch (e) { ready = false; error = `WebGL could not start. Enable hardware acceleration and reload. ${e.message}`; }
   }
-  function fail(message) { error = message; busy = false; status = ''; if (playing) { flags = [true, true]; engine?.setPaused(true); releaseFlightControls(); } }
-  function start(settings = {difficulty, colors:[shipColor,'coral']}) { busy = false; screen = 'game'; hud = null; flags = [false, false]; engine.start({ host, solo, network, settings });boostHeld=false;liftHeld=false;stick={x:0,z:0};tilt?.calibrate(); if (document.hidden) togglePause(true); }
+  function fail(message) { error = message; busy = false; status = ''; replayPending = false; if (playing) { flags = [true, true]; engine?.setPaused(true); releaseFlightControls(); } }
+  function start(settings = {difficulty, colors:[shipColor,'coral']}) {
+    busy = false; screen = 'game'; hud = null; flags = [false, false]; replayPending = false; telemetry = { fps: 0, packetLoss: null };
+    if (settings.difficulty) difficulty = settings.difficulty;
+    if (settings.colors?.[host ? 0 : 1]) shipColor = settings.colors[host ? 0 : 1];
+    engine.start({ host, solo, network, settings }); boostHeld=false; liftHeld=false; steeringBoost=false; stick={x:0,z:0};tilt?.calibrate(); if (document.hidden) togglePause(true);
+  }
   async function connect(create) {
     if (busy || !ready) return;
     error = ''; busy = true; host = create; solo = false; status = create ? 'Opening a frequency…' : 'Finding your wingmate…';
@@ -35,6 +42,9 @@
       connected: () => { status = 'Wingmate connected. Launching…'; if (!create) session.ready(); },
       start,
       input: input => engine.receiveInput(input), snapshot: state => engine.receiveSnapshot(state),
+      telemetry: stats => { telemetry = { ...telemetry, packetLoss: stats.packetLoss, rtt: stats.rtt }; },
+      replay: settings => start(settings),
+      replayRequest: () => { if (hud?.over && host) replayHost(); },
       pause: value => { flags = value; if(flags.some(Boolean))releaseFlightControls(); engine.setPaused(flags.some(Boolean) || Boolean(hud?.over)); },
       error: fail, status: value => status=value
     }, {difficulty,colors:[shipColor,'coral']});
@@ -53,23 +63,39 @@
   }
   function menu() {
     network?.destroy(); network = null; engine?.destroy(); engine = null;
-    screen = 'menu'; flags = [false, false]; hud = null; error = ''; busy = false; status = ''; initEngine();
+    screen = 'menu'; flags = [false, false]; hud = null; error = ''; busy = false; status = ''; replayPending = false; telemetry = { fps: 0, packetLoss: null }; initEngine();
   }
   async function copy() { try { await navigator.clipboard.writeText(room); copied = true; setTimeout(() => copied = false, 1500); } catch { status = 'Select and copy the room code below.'; } }
   async function changeControls(value) {
     controlMessage='';releaseFlightControls();tilt?.disable();controlMode=value;
     if(value==='tilt')try{await tilt.enable();controlMessage='Hold comfortably, then tilt to steer. Recalibrate after rotating.';}catch(e){controlMode='drag';controlMessage=e.message;}
   }
-  function releaseFlightControls(){boostHeld=false;liftHeld=false;stick={x:0,z:0};if(engine){engine.touch={x:0,z:0};engine.actions={boost:false,lift:false};}}
+  function releaseFlightControls(){boostHeld=false;liftHeld=false;steeringBoost=false;stick={x:0,z:0};if(engine){engine.touch={x:0,z:0};engine.actions={boost:false,lift:false};}}
   function holdAction(e,action){if(paused)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);engine.actions[action]=true;if(action==='boost')boostHeld=true;else liftHeld=true;}
   function releaseAction(action){if(engine)engine.actions[action]=false;if(action==='boost')boostHeld=false;else liftHeld=false;}
-  function releaseSteering(){stick={x:0,z:0};if(engine&&controlMode==='drag')engine.touch=stick;}
+  function releaseSteering(){stick={x:0,z:0};steeringBoost=false;boostHeld=false;if(engine&&controlMode==='drag'){engine.touch=stick;engine.actions.boost=false;}}
   function touchMove(e) {
     if(paused||controlMode==='tilt')return;
     e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect(); e.currentTarget.setPointerCapture(e.pointerId);
-    stick = { x: Math.max(-1, Math.min(1, (e.clientX - rect.left - rect.width / 2) / (rect.width / 2))), z: Math.max(-1, Math.min(1, (e.clientY - rect.top - rect.height / 2) / (rect.height / 2))) };
-    engine.touch={x:stick.x*sensitivity,z:stick.z*sensitivity};
+    const radius = Math.min(rect.width, rect.height) / 2;
+    const dx = e.clientX - rect.left - rect.width / 2, dz = e.clientY - rect.top - rect.height / 2;
+    const distance = Math.hypot(dx, dz), boost = distance > radius * 1.16;
+    steeringBoost = boost; boostHeld = boost;
+    stick = { x: Math.max(-1, Math.min(1, dx / radius)), z: Math.max(-1, Math.min(1, dz / radius)) };
+    engine.touch={x:stick.x*sensitivity,z:stick.z*sensitivity}; engine.actions.boost = boost;
+  }
+  function replayHost() {
+    const settings = hud?.settings ?? { difficulty, colors: [shipColor, 'coral'] };
+    if (solo) { start(settings); return; }
+    if (!network?.connection?.open) { error = 'Your wingmate is unavailable. Return to the terminal to reconnect.'; return; }
+    network.replay(settings);
+  }
+  function playAgain() {
+    if (replayPending) return;
+    if (solo || host) { replayHost(); return; }
+    if (!network?.connection?.open) { error = 'Your wingmate is unavailable. Return to the terminal to reconnect.'; return; }
+    replayPending = true; status = 'Waiting for the host to relaunch…'; network.requestReplay();
   }
   function focusModal(node) {
     node.focus();
@@ -94,7 +120,7 @@
 <div class:in-game={playing} class="shell">
   <header>
     <a href="/" class="brand" aria-label="Neon Wing home"><span class="brand-icon">⋈</span> NEON<span>WING</span></a>
-    <div class="header-right"><span class="live-dot"></span> {playing ? `${solo ? 'PRACTICE' : 'P2P LINK'} / ${room}` : 'CO-OP SURVIVAL'} <span class="version">SKYWAY / 04</span></div>
+    <div class="header-right"><span class="live-dot"></span> {playing ? `${solo ? 'PRACTICE' : 'P2P LINK'} / ${room}` : 'CO-OP SURVIVAL'} <span class="version">SKYWAY / 05</span></div>
   </header>
 
   {#if !playing}
@@ -143,11 +169,11 @@
         {/if}
         {#if (busy || screen === 'lobby') && !error}<div class="connection-progress" role="status"><div class="link-orbit"><span>✦</span><i></i><span>✦</span></div><p>{status}</p><small>Find room → negotiate route → launch together</small></div>{/if}
         {#if error}<p class="error" role="alert">{error}</p>{/if}
-<details class="control-details"><summary>Control settings</summary><div class="control-settings"><label for="steering">PHONE STEERING</label><select id="steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select><label for="sensitivity">STEERING SENSITIVITY</label><input id="sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div></details>
+<details class="control-details"><summary>Control settings</summary><div class="control-settings"><label for="steering">PHONE STEERING</label><select id="steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="sensitivity">STEERING SENSITIVITY</label><input id="sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div></details>
         <div class="panel-bottom"><span class="live-dot"></span> WEBRTC DIRECT LINK <span>2 PLAYERS MAX</span></div>
       </section>
 
-      <div class="flight-guide"><div><span class="guide-number">01</span><p><strong>Find your flow</strong><small><kbd>W A S D</kbd> or arrow keys to move</small></p></div><div><span class="guide-number">02</span><p><strong>Let it rain</strong><small>Auto-fire targets the nearest threat</small></p></div><div><span class="guide-number">03</span><p><strong>Chase the glow</strong><small>SHIFT to boost · Hold SPACE to climb</small></p></div></div>
+      <div class="flight-guide"><div><span class="guide-number">01</span><p><strong>Find your flow</strong><small><kbd>W A S D</kbd> or arrow keys to move</small></p></div><div><span class="guide-number">02</span><p><strong>Let it rain</strong><small>Auto-fire targets the nearest threat</small></p></div><div><span class="guide-number">03</span><p><strong>Chase the glow</strong><small>SHIFT or outer-drag to boost · Hold SPACE to climb</small></p></div></div>
     </main>
     <footer><span>POSTCARDS FROM THE FAST LANE.</span><span><i class="cyan"></i> YOUR COLOR <i class="pink"></i> YOUR WINGMATE</span><span>HEADPHONES OFF. THRUSTERS ON.</span></footer>
   {:else}
@@ -157,25 +183,26 @@
       <button class="pause-button" onclick={() => togglePause()} disabled={!!hud?.over || !!error}>Ⅱ <span>ESC / PAUSE</span></button>
     </div>
     {#if !solo}<div class="wingmate-status">WINGMATE <span class:down={hud?.players[1-me]?.hp === 0}>{hud?.players[1-me]?.hp === 0 ? 'SIGNAL LOST — KEEP FLYING' : `${hud?.players[1-me]?.hp ?? 5}/5 HULL`}</span></div>{/if}
-    <div class="flight-instruments"><span>SPD <b data-testid="speed">{Math.round((14+(hud?.players[me]?.boost ?? 0))*3.6)}</b> km/h</span><span>ALT <b data-testid="altitude">{Math.round((hud?.players[me]?.y ?? 0)+4)}</b> m</span><span>{(hud?.settings?.difficulty ?? difficulty).toUpperCase()}</span></div>
+    <div class="flight-instruments"><span>SPD <b data-testid="speed">{Math.round((FLIGHT_SPEED+(hud?.players[me]?.boost ?? 0))*3.6)}</b> km/h</span><span>ALT <b data-testid="altitude">{Math.round((hud?.players[me]?.y ?? 0)+4)}</b> m</span><span>{(hud?.settings?.difficulty ?? difficulty).toUpperCase()}</span></div>
+    <div class="telemetry-strip" aria-label="Flight telemetry"><span>FPS <b>{telemetry.fps || '—'}</b></span><span>PKT <b>{solo || telemetry.packetLoss == null ? '—' : `${Math.round(telemetry.packetLoss * 100)}%`}</b></span></div>
     <div class="route-label"><span>SHIFT / BOOST · SPACE / CLIMB</span><strong>The Afterlight Skyway</strong></div>
     <div class="game-hint">BANK THROUGH THE SKYWAY <span>◇</span> COLLECT UPGRADE CORES <span>◇</span> {hud?.settings?.difficulty==='brutal' ? 'ALIGN YOUR SHOTS' : 'WEAPONS AUTO-FIRE'}</div>
     <div class="touch-controls">
-      {#if controlMode==='drag'}<button aria-label="Drag to steer" class="touch-pad" onpointerdown={touchMove} onpointermove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))touchMove(e);}} onpointerup={releaseSteering} onpointercancel={releaseSteering} onlostpointercapture={releaseSteering}><span style:transform={`translate(${stick.x*28}px,${stick.z*28}px)`}>✥</span></button>{:else}<button class="calibrate" onclick={()=>tilt.calibrate()}>◎<br/>CALIBRATE TILT</button>{/if}
-      <span>{controlMode==='drag'?'DRAG TO STEER':'TILT TO STEER'}</span>
+      {#if controlMode==='drag'}<button aria-label="Drag to steer" class:boost-active={steeringBoost} class="touch-pad" onpointerdown={touchMove} onpointermove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))touchMove(e);}} onpointerup={releaseSteering} onpointercancel={releaseSteering} onlostpointercapture={releaseSteering}><span class="touch-stick" style:transform={`translate(${stick.x*28}px,${stick.z*28}px)`}>✥</span><span class="touch-boost-badge" aria-live="polite">{steeringBoost ? 'BOOST' : ''}</span></button>{:else}<button class="calibrate" onclick={()=>tilt.calibrate()}>◎<br/>CALIBRATE TILT</button>{/if}
+      <span class="touch-label">{controlMode==='drag'?(steeringBoost?'OUTER BOOST ACTIVE':'DRAG TO STEER · PULL OUT TO BOOST'):'TILT TO STEER'}</span>
     </div>
     <div class="flight-actions">
       <button aria-label="Hold to climb" class:held={liftHeld} onpointerdown={e=>holdAction(e,'lift')} onpointerup={()=>releaseAction('lift')} onpointercancel={()=>releaseAction('lift')} onlostpointercapture={()=>releaseAction('lift')}>↑<small>CLIMB</small></button>
-      <button aria-label="Hold to boost" class:held={boostHeld} onpointerdown={e=>holdAction(e,'boost')} onpointerup={()=>releaseAction('boost')} onpointercancel={()=>releaseAction('boost')} onlostpointercapture={()=>releaseAction('boost')}>»<small>BOOST</small></button>
     </div>
     {#if paused || hud?.over || error}
       <div class="overlay"><div class="pause-panel" role="dialog" aria-modal="true" aria-label={hud?.over ? 'Run complete' : 'Flight paused'} tabindex="-1" use:focusModal>
         <p class="eyebrow">{error ? 'LINK INTERRUPTED' : hud?.over ? 'END OF TRANSMISSION' : 'FREQUENCY ON HOLD'}</p>
         <h2>{error ? 'Signal lost.' : hud?.over ? 'Into the afterlight.' : 'Catch your breath.'}</h2>
         <p>{error || (hud?.over ? 'The city takes this one. Your next run is waiting.' : solo ? 'Your run is paused.' : 'Both ships are paused. Each pilot must clear their own pause to resume.')}</p>
-<div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select><label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
+<div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
         <div class="end-stats"><div><small>SURVIVED</small><strong>{time(hud?.time)}</strong></div><div><small>TEAM SCORE</small><strong>{hud?.score ?? 0}</strong></div></div>
         {#if !hud?.over && !error}<button class="primary full" onclick={() => togglePause()} disabled={!flags[me]}>{flags[me] ? 'RESUME FLIGHT' : 'WAITING FOR WINGMATE'} <span>→</span></button>{/if}
+        {#if hud?.over}<button class="primary full" onclick={playAgain} disabled={replayPending || (!solo && !network?.connection?.open)}>{replayPending ? 'WAITING FOR WINGMATE…' : 'PLAY AGAIN'} <span>↻</span></button>{/if}
         <button class="secondary full" onclick={menu}>RETURN TO TERMINAL</button>
       </div></div>
     {/if}

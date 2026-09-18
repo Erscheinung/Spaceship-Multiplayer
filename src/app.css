@@ -28,4 +28,25 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
 @media(max-width:680px),(pointer:coarse){.flight-actions{position:fixed;right:20px;bottom:max(30px,env(safe-area-inset-bottom));display:flex;gap:12px;pointer-events:auto}.flight-actions button{touch-action:none;user-select:none;-webkit-user-select:none;width:66px;height:74px;border-radius:18px;border:1px solid #40546188;background:#f7f0debd;color:#344f58;font-size:29px;box-shadow:3px 3px 0 #293e4920}.flight-actions small{display:block;font-size:8px;letter-spacing:1px}.flight-actions button.held{background:#eeb363;transform:translateY(2px)}.route-label{display:none}.flight-instruments{top:154px;left:14px;font-size:8px;padding:6px 8px;gap:9px}.flight-instruments b{font-size:11px}.touch-controls{bottom:25px}.game-hint{display:none}}
 @media(max-height:500px) and (pointer:coarse){.in-game header{height:40px}.hud{padding-top:0}.pilot-card,.run-stats{padding:6px 10px}.flight-instruments{top:130px}.touch-pad,.calibrate{width:85px;height:85px}.flight-actions button{height:65px;width:60px}.touch-controls,.flight-actions{bottom:12px}}
 
+/* Outer-ring touch boost: a deliberate pull beyond the pad rim gives an
+   unambiguous boost state while the center remains normal steering. */
+.touch-pad{position:relative;overflow:visible}
+.touch-pad:before{content:'';position:absolute;inset:-9px;border:1px dashed #177d8355;border-radius:50%;pointer-events:none;opacity:.7;transition:.14s ease}
+.touch-pad.boost-active{background:#f0b45eaa;color:#293e49;box-shadow:0 0 0 3px #b54f3944,3px 3px 0 #293e4920}
+.touch-pad.boost-active:before{inset:-15px;border:2px solid #b54f39;box-shadow:0 0 15px #b54f3966;opacity:1}
+.touch-stick{pointer-events:none;z-index:1}
+.touch-boost-badge{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:9px!important;font-weight:700;letter-spacing:1px;pointer-events:none;color:#a84338!important;opacity:0;transition:opacity .12s ease}
+.touch-pad.boost-active .touch-boost-badge{opacity:1}
+.touch-label{white-space:nowrap}
+.telemetry-strip{position:fixed;top:119px;left:28px;z-index:3;display:flex;gap:10px;padding:4px 7px;background:#f7f0decc;border:1px solid #40546133;color:#536b73;font-size:7px;letter-spacing:1px;pointer-events:none}
+.telemetry-strip b{color:#293e49;font-size:9px}
+@media(max-width:680px),(pointer:coarse){
+  .flight-actions{right:max(12px,env(safe-area-inset-right));left:auto}
+  .telemetry-strip{top:119px;left:14px;font-size:6px;gap:8px;padding:3px 6px}
+  .telemetry-strip b{font-size:8px}
+  .touch-controls{z-index:3}
+  .touch-controls .touch-label{font-size:6px;letter-spacing:.8px}
+}
+@media(max-height:500px) and (pointer:coarse){.telemetry-strip{top:84px}.touch-pad:before{inset:-7px}.touch-pad.boost-active:before{inset:-11px}}
+
 .quick-start{pointer-events:auto;display:block;text-align:left;margin:20px 0 24px;padding:14px 18px;min-height:60px;border:1px solid #177d8380;background:#f7f0ded9;color:#177d83;letter-spacing:2px;font:inherit;font-size:13px;animation:start-pulse 2s ease-in-out infinite;touch-action:manipulation}.quick-start small{display:block;font-size:8px;letter-spacing:2px;margin-top:7px}.quick-start:disabled{animation:none;opacity:.4}.phone-start{display:none}.connection-progress{padding:16px 8px;margin:14px 0;background:#dce8da;border:1px solid #177d8340;text-align:center;color:#365967}.connection-progress p{font-size:12px;line-height:1.5}.connection-progress small{font-size:9px}.link-orbit{display:flex;align-items:center;justify-content:center;gap:12px;color:#177d83}.link-orbit span{font-size:24px;animation:start-pulse 1.4s ease-in-out infinite}.link-orbit span:last-child{animation-delay:.7s;color:#ba5a43}.link-orbit i{width:72px;height:3px;background:linear-gradient(90deg,transparent,#177d83,transparent);background-size:200% 100%;animation:link-flow 1s linear infinite}@keyframes start-pulse{50%{opacity:.55;box-shadow:0 0 18px #177d8320}}@keyframes link-flow{to{background-position:-200% 0}}@media(pointer:coarse){.desktop-start{display:none}.phone-start{display:inline}.quick-start{width:100%;max-width:300px}}@media(prefers-reduced-motion:reduce){.quick-start,.link-orbit span,.link-orbit i{animation:none}}

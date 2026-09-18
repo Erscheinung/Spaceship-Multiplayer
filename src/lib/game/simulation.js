@@ -2,6 +2,10 @@ import { DIFFICULTIES, flightSettings } from './settings.js';
 import { cityObstacles, hitsBuilding, courseFrame, FLIGHT_SPEED } from './course.js';
 export const BOUNDS = { x: 13, zMin: -12, zMax: 13 };
 export const STEP = 1 / 60;
+// The former boost pace is now the everyday cruise pace. `boost` remains a
+// transient extra so snapshots and prediction retain their existing shape.
+export const CRUISE_SPEED = 25;
+export const BOOST_SPEED = 58;
 export const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z, (a.y ?? 0) - (b.y ?? 0));
 const player = (id, active) => ({ id, active, x: id ? 4 : -4, z: 8, y: 0, vy: 0, vx: 0, boost: 0, travel: 0, hp: 5, rate: 0, spread: 0, cooldown: 0, invulnerable: 2 });
@@ -9,15 +13,17 @@ const player = (id, active) => ({ id, active, x: id ? 4 : -4, z: 8, y: 0, vy: 0,
 // Shared movement for authoritative steps and guest visual prediction.
 export function advanceFlight(p, input, dt, time) {
   const length = Math.max(1, Math.hypot(input.x, input.z));
-  p.boost += ((input.boost ? 25 : 0) - p.boost) * (1 - Math.exp(-dt * (input.boost ? 2.4 : 1.1)));
-  p.travel += p.boost * dt;
+  const target = input.turbo ? BOOST_SPEED : input.cruise ? CRUISE_SPEED : input.boost ? 25 : 0;
+  p.boost += (target - p.boost) * (1 - Math.exp(-dt * (target > 0 ? 2.4 : 1.1)));
+  const speed = p.boost;
+  p.travel += speed * dt;
   const curve = courseFrame(time * FLIGHT_SPEED - p.z).curvature;
-  const drift = -curve * (FLIGHT_SPEED + p.boost) ** 2 * .16;
+  const drift = -curve * (FLIGHT_SPEED + speed) ** 2 * .16;
   p.vx += (input.x / length * 12 + drift - p.vx) * (1 - Math.exp(-dt * 10));
   p.x += p.vx * dt;
   const boundary = Math.abs(p.x) > BOUNDS.x;
   if (boundary) { p.x = Math.sign(p.x) * (BOUNDS.x - .15); p.vx *= -.4; p.boost *= .75; }
-  p.z = clamp(p.z + input.z / length * 11 * dt - p.boost * dt, BOUNDS.zMin - p.travel, BOUNDS.zMax - p.travel);
+  p.z = clamp(p.z + input.z / length * 11 * dt - speed * dt, BOUNDS.zMin - p.travel, BOUNDS.zMax - p.travel);
   p.vy += ((input.lift ? 10 : -6) - p.vy) * (1 - Math.exp(-dt * 3.5));
   p.y = clamp(p.y + p.vy * dt, 0, 28);
   if (p.y === 0 || p.y === 28) p.vy = 0;
@@ -35,7 +41,7 @@ export class Simulation {
   setInput(id, input) {
     if (!this.inputs[id] || !input || !Number.isFinite(input.x) || !Number.isFinite(input.z)) return;
     const length = Math.max(1, Math.hypot(input.x, input.z));
-    this.inputs[id] = { x: input.x / length, z: input.z / length, boost: input.boost === true, lift: input.lift === true };
+    this.inputs[id] = { x: input.x / length, z: input.z / length, boost: input.boost === true, turbo: input.turbo === true, cruise: input.cruise === true, lift: input.lift === true };
   }
   spawnRock() {
     if (this.state.rocks.length >= 60) return;

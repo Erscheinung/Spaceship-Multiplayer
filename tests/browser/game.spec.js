@@ -6,13 +6,15 @@ function collectErrors(page) {
   page.on('console', message => { if (message.type() === 'error' && /THREE|WebGL|shader/i.test(message.text())) errors.push(message.text()); });
   return errors;
 }
-async function open(page) { await page.goto('/'); await expect(page.getByRole('button', { name: 'Solo practice' })).toBeEnabled({ timeout: 25000 }); }
+async function open(page) { await page.goto('/'); await expect(page.locator('button.practice')).toBeEnabled({ timeout: 25000 }); }
 
 test('procedural WebGL scene, solo play, Escape freeze/resume, clean return', async ({ page }) => {
   const errors = collectErrors(page); await open(page);
   await page.screenshot({ path: 'test-results/menu-desktop.png' });
-  await page.getByRole('button', { name: 'Solo practice' }).click();
-  await expect(page.locator('.run-stats strong')).not.toHaveText('00:00', { timeout: 15000 });
+  await page.locator('button.practice').click();
+  // Software WebGL can take a few seconds to leave the attract loop on a
+  // busy CI host; the run must still advance once the flight loop is live.
+  await expect(page.locator('.run-stats strong')).not.toHaveText('00:00', { timeout: 30000 });
   await page.keyboard.down('KeyD'); await page.waitForTimeout(250); await page.keyboard.up('KeyD');
   await page.keyboard.press('Escape'); await expect(page.getByRole('dialog')).toBeVisible();
   const pausedTime = await page.locator('.run-stats strong').textContent();
@@ -58,14 +60,21 @@ test('mobile terminal fits and touch steering is available', async ({ page }) =>
   await page.setViewportSize({ width: 402, height: 874 }); const errors = collectErrors(page); await open(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/menu-mobile.png', fullPage: true });
-  await page.getByRole('button', { name: 'Solo practice' }).click(); await expect(page.getByRole('button', { name: 'Drag to steer' })).toBeVisible();
+  await page.locator('button.practice').click(); await expect(page.getByRole('button', { name: 'Drag to steer' })).toBeVisible();
   await expect(page.locator('.run-stats strong')).not.toHaveText('00:00');
+  await expect(page.locator('.telemetry-strip')).toContainText('FPS', { timeout: 3000 });
+  await expect(page.getByRole('button', { name: 'Hold to boost' })).toHaveCount(0);
   const cards = await page.locator('.hud > *').evaluateAll(nodes => nodes.map(n => {const r=n.getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom};}));
   expect(cards[0].right).toBeLessThan(cards[1].left); expect(cards[1].right).toBeLessThan(cards[2].left);expect(cards[2].right).toBeLessThanOrEqual(402);
   expect(Math.max(...cards.map(c=>c.bottom))).toBeLessThan(160);
   const pad=await page.getByRole('button',{name:'Drag to steer'}).boundingBox();
+  const cruiseSpeed = Number(await page.locator('[data-testid="speed"]').textContent());
   await page.mouse.move(pad.x+pad.width/2,pad.y+pad.height/2);await page.mouse.down();
-  await page.mouse.move(pad.x+pad.width*.8,pad.y+pad.height*.4);await page.waitForTimeout(250);await page.mouse.up();
+  await page.mouse.move(pad.x+pad.width+18,pad.y+pad.height/2);await expect(page.locator('.touch-pad')).toHaveClass(/boost-active/);
+  await expect(page.locator('.touch-boost-badge')).toHaveText('BOOST'); await page.waitForTimeout(400);
+  const turboSpeed = Number(await page.locator('[data-testid="speed"]').textContent());
+  expect(turboSpeed).toBeGreaterThan(cruiseSpeed);
+  await page.mouse.up(); await expect(page.locator('.touch-pad')).not.toHaveClass(/boost-active/);
   await page.screenshot({ path: 'test-results/flight-mobile.png' });
   await page.setViewportSize({width:874,height:402});await page.screenshot({path:'test-results/flight-landscape.png'});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -77,7 +86,8 @@ test('chase camera keeps either pilot central in desktop, portrait and landscape
   const errors = collectErrors(page);
   const projections = await page.evaluate(async () => {
     const { createScene } = await import('/src/lib/game/scene.js');
-    const { worldX } = await import('/src/lib/game/course.js');
+    const { worldPosition } = await import('/src/lib/game/course.js');
+    const THREE = await import('/node_modules/three/build/three.module.js');
     const holder = document.createElement('div'); holder.style.cssText='position:fixed;inset:0;z-index:100'; document.body.appendChild(holder);
     const result=[];
     for(const [w,h] of [[1440,900],[402,874],[874,402]]) {
@@ -85,7 +95,8 @@ test('chase camera keeps either pilot central in desktop, portrait and landscape
       const world=createScene(holder);
       for(const x of [-13,4,13]) {
         const p={x,z:8};world.resetCamera();world.render(20,p);
-        const v=world.camera.position.clone().set(worldX(x,8,20),0,8).project(world.camera);
+        const point=worldPosition(x,0,8,20);
+        const v=new THREE.Vector3(point.x,point.y,point.z).project(world.camera);
         result.push({x:(v.x+1)/2,y:(1-v.y)/2});
       }
       world.dispose();
