@@ -94,3 +94,46 @@ test('stream telemetry counts sequence gaps and replay messages are idempotent',
   assert.equal(guestEvents.length, 1); assert.equal(guestEvents[0].difficulty, 'easy');
   guest.destroy();
 });
+
+
+test('browser suspension grants a recovery window, while a live dead connection times out', () => {
+  const { session, fire, errors } = setup();
+  session.connection = { open: true, send() {}, close() {} };
+  session.lastSeen = Date.now() - 60000;
+  session.heartbeatTime = Date.now() - 60000;
+  fire(2000);
+  assert.equal(session.closed, false);
+  assert.ok(Date.now() - session.lastSeen < 1000);
+  // The fake interval is consumed by fire; use a fresh session for the timeout.
+  session.destroy();
+  const other = setup();
+  other.session.connection = { open: true, send() {}, close() {} };
+  other.session.lastSeen = Date.now() - 31000;
+  other.fire(2000);
+  assert.equal(other.session.closed, true);
+  assert.match(other.errors[0], /Connection lost/);
+  assert.equal(errors.length, 0);
+});
+
+test('PeerJS backlog drops stale updates but still sends pause control', () => {
+  const { session } = setup(); const sent = [];
+  session.connection = { open: true, bufferSize: 1, dataChannel: { bufferedAmount: 0 }, send: m => sent.push(m), close() {} };
+  session.send({ type: 'snapshot', state: { time: 1 } });
+  session.send({ type: 'pause', flags: [true, false] });
+  assert.equal(session.packetStats.dropped, 1);
+  assert.equal(sent.length, 1); assert.equal(sent[0].type, 'pause');
+  session.destroy();
+});
+
+test('temporary ICE disconnect recovers without ending the run', () => {
+  const { session, timers } = setup(); let changed;
+  const pc = { iceConnectionState: 'connected', addEventListener: (_, fn) => { changed = fn; } };
+  const c = new EventEmitter(); c.peerConnection = pc; c.close = () => c.emit('close');
+  session.attach(c); c.open = true; c.emit('open');
+  session.receive({ type: 'start', settings: {} });
+  pc.iceConnectionState = 'disconnected'; changed();
+  assert.ok([...timers.values()].some(t => t.delay === 30000));
+  pc.iceConnectionState = 'connected'; changed();
+  assert.equal([...timers.values()].some(t => t.delay === 30000), false);
+  assert.equal(session.closed, false); session.destroy();
+});

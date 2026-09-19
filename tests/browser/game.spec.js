@@ -28,7 +28,10 @@ test('procedural WebGL scene, solo play, Escape freeze/resume, clean return', as
 });
 
 test('two real peers join, receive state, pause from either side and detect disconnect', async ({ browser }) => {
-  const context = await browser.newContext(); const host = await context.newPage(); const guest = await context.newPage();
+  const context = await browser.newContext({ viewport: { width: 800, height: 600 } });
+  // Local signaling coverage does not depend on the external credential service.
+  await context.route('**/api/ice', route => route.fulfill({ json: { iceServers: [] } }));
+  const host = await context.newPage(); const guest = await context.newPage();
   const errors = collectErrors(host); const guestErrors = collectErrors(guest);
   try {
     await open(host); await open(guest);
@@ -51,7 +54,7 @@ test('two real peers join, receive state, pause from either side and detect disc
     await expect(guest.locator('.run-stats strong')).not.toHaveText(frozen);
     await host.keyboard.press('Escape'); await expect(guest.getByRole('dialog')).toBeVisible();
     await host.getByRole('button', { name: 'RESUME FLIGHT' }).click(); await expect(guest.getByRole('dialog')).toHaveCount(0);
-    await host.close(); await expect(guest.getByText('Signal lost.', { exact: true })).toBeVisible({ timeout: 15000 });
+    await host.close(); await expect(guest.getByText('Signal lost.', { exact: true })).toBeVisible({ timeout: 40000 });
     expect(errors.concat(guestErrors)).toEqual([]);
   } finally { await context.close(); }
 });
@@ -63,10 +66,12 @@ test('mobile terminal fits and touch steering is available', async ({ page }) =>
   await page.locator('button.practice').click(); await expect(page.getByRole('button', { name: 'Drag to steer' })).toBeVisible();
   await expect(page.locator('.run-stats strong')).not.toHaveText('00:00');
   await expect(page.locator('.telemetry-strip')).toContainText('FPS', { timeout: 3000 });
-  await expect(page.getByRole('button', { name: 'Hold to boost' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Hold to boost' })).toBeVisible();
   const cards = await page.locator('.hud > *').evaluateAll(nodes => nodes.map(n => {const r=n.getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom};}));
   expect(cards[0].right).toBeLessThan(cards[1].left); expect(cards[1].right).toBeLessThan(cards[2].left);expect(cards[2].right).toBeLessThanOrEqual(402);
   expect(Math.max(...cards.map(c=>c.bottom))).toBeLessThan(160);
+  const card = await page.locator('.pilot-card').boundingBox();
+  expect(card.width).toBeLessThan(165); expect(card.height).toBeLessThan(90);
   const pad=await page.getByRole('button',{name:'Drag to steer'}).boundingBox();
   const cruiseSpeed = Number(await page.locator('[data-testid="speed"]').textContent());
   await page.mouse.move(pad.x+pad.width/2,pad.y+pad.height/2);await page.mouse.down();

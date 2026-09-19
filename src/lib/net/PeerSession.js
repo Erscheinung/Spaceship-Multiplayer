@@ -2,7 +2,7 @@ import { flightSettings, SHIP_COLORS } from '../game/settings.js';
 import Peer from 'peerjs';
 import { env } from '$env/dynamic/public';
 
-const PROTOCOL = 'neon-wing-skyway-v5';
+const PROTOCOL = 'neon-wing-skyway-v6';
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const STREAM_TYPES = new Set(['input', 'snapshot']);
 export function roomCode() {
@@ -19,10 +19,15 @@ export class PeerSession {
     this.events = events; this.host = false; this.connection = null; this.closed = false;
     this.signalingReady = false; this.waitingForSignal = false;
     this.pauseFlags = [false, false]; this.started = false; this.lastSeen = Date.now();
+    this.heartbeatTime = Date.now();
     this.heartbeat = setInterval(() => {
+      const now = Date.now();
+      // Give queued packets time to arrive after browser suspension or a long frame.
+      if (now - this.heartbeatTime > 6000) this.lastSeen = now;
+      this.heartbeatTime = now;
       if (!this.connection?.open) return;
       this.send({ type: 'ping', sent: Date.now() });
-      if (Date.now() - this.lastSeen > 12000) this.fail('Connection lost. Return to the menu to reconnect.');
+      if (now - this.lastSeen > 30000) this.fail('Connection lost. Return to the menu to reconnect.');
     }, 2000);
   }
   async options() {
@@ -165,7 +170,7 @@ export class PeerSession {
       clearTimeout(this.disconnectTimer);
       if (pc.iceConnectionState === 'disconnected') {
         this.events.status?.('Signal interrupted · recovering the route…');
-        this.disconnectTimer = setTimeout(() => this.connectionFailed(connection), 10000);
+        this.disconnectTimer = setTimeout(() => this.connectionFailed(connection), 30000);
       }
       if (pc.iceConnectionState === 'failed') this.connectionFailed(connection);
     });
@@ -184,7 +189,7 @@ export class PeerSession {
     const outgoing = { ...message };
     if (STREAM_TYPES.has(outgoing.type)) outgoing.streamSequence = ++this.streamSequences[outgoing.type];
     // Drop disposable updates instead of accumulating seconds of stale state.
-    if (STREAM_TYPES.has(outgoing.type) && !outgoing.state?.over && this.connection.dataChannel?.bufferedAmount > 16000) { this.packetStats.dropped++; this.events.telemetry?.(this.telemetry()); return; }
+    if (STREAM_TYPES.has(outgoing.type) && !outgoing.state?.over && (this.connection.dataChannel?.bufferedAmount > 16000 || this.connection.bufferSize > 0)) { this.packetStats.dropped++; return; }
     try { this.connection.send({ ...outgoing, sequence: ++this.sequence }); } catch { this.fail('Could not send to your wingmate.'); }
   }
   receive(d) {
@@ -200,7 +205,6 @@ export class PeerSession {
       this.packetStats.lost += Math.max(0, d.streamSequence - previous - 1);
       this.receivedStreams[d.type] = d.streamSequence;
       this.packetStats.received++;
-      this.events.telemetry?.(this.telemetry());
     }
     if (d.type === 'ping') { this.send({ type: 'pong', sent: d.sent }); return; }
     if (d.type === 'pong') { if (Number.isFinite(d.sent)) this.rtt = Math.max(0, Date.now() - d.sent); return; }

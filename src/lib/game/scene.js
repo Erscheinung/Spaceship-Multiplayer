@@ -10,7 +10,7 @@ import { worldPosition, courseFrame, FLIGHT_SPEED } from './course.js';
 
 export function createScene(container) {
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xa5ddd6); scene.fog = new THREE.Fog(0xa5ddd6,80,260);
-  const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ antialias:false, powerPreference:'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.5)); renderer.toneMapping=THREE.NoToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.domElement.setAttribute('aria-label','Neon Wing illustrated 3D city flight'); container.appendChild(renderer.domElement);
   const camera = new THREE.PerspectiveCamera(65,1,.1,450);

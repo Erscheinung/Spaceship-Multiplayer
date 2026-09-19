@@ -65,26 +65,23 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
 @media(max-width:680px),(pointer:coarse){.telemetry-strip{position:static;top:auto;left:auto;gap:7px;margin-top:7px;padding:0;font-size:6px}.telemetry-strip b{font-size:7px}}
 @media(prefers-reduced-motion:reduce){.pilot-card.damage-flash{animation:none;border-color:#b54f39}}
 
-/* Keep the pilot telemetry card roomy enough for its complete status stack,
-   while leaving a clear responsive gutter before the flight instruments. */
-.pilot-card{width:clamp(220px,26vw,385px)}
-.flight-instruments{top:clamp(178px,22svh,220px)}
+/* Compact status stack; damage feedback overlays without moving the instruments. */
+.pilot-card{position:relative;width:max-content;max-width:100%;min-height:0;padding:8px 10px}
+.pilot-card .eyebrow{margin-bottom:4px;font-size:8px}
+.health{margin-bottom:4px;gap:3px}
+.health span{font-size:15px;flex:0 0 auto}
+.pilot-card small{font-size:8px}
+.pilot-card b{padding:0 2px}
+.telemetry-strip{margin-top:4px;gap:8px;line-height:1}
+.telemetry-strip b{padding:0}
+.damage-feedback{position:absolute;top:100%;left:0;margin-top:3px;white-space:nowrap;background:#f7f0deed;padding:3px 5px}
+.flight-instruments{top:182px}
 @media(max-width:680px),(pointer:coarse){
-  .pilot-card{width:min(100%,220px)}
-  .flight-instruments{top:clamp(192px,24svh,240px)}
+ .pilot-card{width:max-content;max-width:100%;min-height:0;padding:7px 8px}
+ .pilot-card .eyebrow{margin-bottom:4px}
+ .telemetry-strip{margin-top:4px}
+ .flight-instruments{top:166px}
+ .touch-controls{left:max(24px,env(safe-area-inset-left));align-items:center;width:104px}
+ .touch-label{white-space:normal;max-width:120px;line-height:1.4}
 }
-
-/* Reserve the feedback row so a hit never changes the HUD's layout while
-   the flight loop is running. Keep the instrument gutter compact. */
-.pilot-card{min-height:104px;contain:layout paint}
-.flight-instruments{top:clamp(156px,18svh,180px)}
-@media(max-width:680px),(pointer:coarse){
-  .pilot-card{width:min(100%,180px);min-height:98px}
-  .flight-instruments{top:clamp(168px,20svh,190px)}
-}
-@media(max-height:500px) and (pointer:coarse){
-  .flight-instruments{top:128px}
-}
-
-/* Keep hit feedback visually clear without animating a large shadow region. */
-@keyframes damage-card-flash{0%,100%{border-color:#40546188}25%{border-color:#b54f39}}
+@media(max-height:500px) and (pointer:coarse){.flight-instruments{top:143px}}

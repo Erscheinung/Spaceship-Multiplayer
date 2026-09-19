@@ -8,7 +8,7 @@
   let difficulty='normal', shipColor='cyan', controlMode='drag', sensitivity=1, tilt, controlMessage='', boostHeld=false, liftHeld=false, stick={x:0,z:0};
   let flags = [false, false], hud = null, copied = false, telemetry = { fps: 0, packetLoss: null }, replayPending = false;
   let damageNotice = '', damageFlash = false, damageNoticeTimer;
-  let steeringBoost = false;
+  let steeringBoost = false, boostButtonHeld = false, steeringPointer = null;
   $: paused = flags.some(Boolean);
   $: me = host ? 0 : 1;
   $: playing = screen === 'game';
@@ -88,20 +88,22 @@
     controlMessage='';releaseFlightControls();tilt?.disable();controlMode=value;
     if(value==='tilt')try{await tilt.enable();controlMessage='Hold comfortably, then tilt to steer. Recalibrate after rotating.';}catch(e){controlMode='drag';controlMessage=e.message;}
   }
-  function releaseFlightControls(){boostHeld=false;liftHeld=false;steeringBoost=false;stick={x:0,z:0};if(engine){engine.touch={x:0,z:0};engine.actions={boost:false,lift:false};}}
-  function holdAction(e,action){if(paused)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);engine.actions[action]=true;if(action==='boost')boostHeld=true;else liftHeld=true;}
-  function releaseAction(action){if(engine)engine.actions[action]=false;if(action==='boost')boostHeld=false;else liftHeld=false;}
-  function releaseSteering(){stick={x:0,z:0};steeringBoost=false;boostHeld=false;if(engine&&controlMode==='drag'){engine.touch=stick;engine.actions.boost=false;}}
+  function releaseFlightControls(){steeringPointer=null;boostButtonHeld=false;boostHeld=false;liftHeld=false;steeringBoost=false;stick={x:0,z:0};if(engine){engine.touch={x:0,z:0};engine.actions={boost:false,lift:false};}}
+  function holdAction(e,action){if(paused)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);engine.actions[action]=true;if(action==='boost'){boostButtonHeld=true;boostHeld=true;}else liftHeld=true;}
+  function releaseAction(action){if(action==='boost'){boostButtonHeld=false;boostHeld=steeringBoost;if(engine)engine.actions.boost=steeringBoost;}else {liftHeld=false;if(engine)engine.actions.lift=false;}}
+  function releaseSteering(e){if(e&&e.pointerId!==steeringPointer)return;steeringPointer=null;stick={x:0,z:0};steeringBoost=false;boostHeld=boostButtonHeld;if(engine&&controlMode==='drag'){engine.touch=stick;engine.actions.boost=boostButtonHeld;}}
   function touchMove(e) {
-    if(paused||controlMode==='tilt')return;
+    if(paused||controlMode==='tilt'||(steeringPointer!==null&&steeringPointer!==e.pointerId))return;
+    steeringPointer=e.pointerId;
     e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect(); e.currentTarget.setPointerCapture(e.pointerId);
     const radius = Math.min(rect.width, rect.height) / 2;
     const dx = e.clientX - rect.left - rect.width / 2, dz = e.clientY - rect.top - rect.height / 2;
-    const distance = Math.hypot(dx, dz), boost = distance > radius * 1.16;
-    steeringBoost = boost; boostHeld = boost;
-    stick = { x: Math.max(-1, Math.min(1, dx / radius)), z: Math.max(-1, Math.min(1, dz / radius)) };
-    engine.touch={x:stick.x*sensitivity,z:stick.z*sensitivity}; engine.actions.boost = boost;
+    const distance = Math.hypot(dx, dz), boost = distance > radius * (steeringBoost ? 1.02 : 1.18);
+    steeringBoost = boost; boostHeld = boost || boostButtonHeld;
+    const scale = Math.max(radius, distance);
+    stick = distance < radius * .08 ? {x:0,z:0} : {x:dx/scale,z:dz/scale};
+    engine.touch={x:stick.x*sensitivity,z:stick.z*sensitivity}; engine.actions.boost = boostHeld;
   }
   function replayHost() {
     const settings = hud?.settings ?? { difficulty, colors: [shipColor, 'coral'] };
@@ -187,7 +189,7 @@
         {/if}
         {#if (busy || screen === 'lobby') && !error}<div class="connection-progress" role="status"><div class="link-orbit"><span>✦</span><i></i><span>✦</span></div><p>{status}</p><small>Find room → negotiate route → launch together</small></div>{/if}
         {#if error}<p class="error" role="alert">{error}</p>{/if}
-<details class="control-details"><summary>Control settings</summary><div class="control-settings"><label for="steering">PHONE STEERING</label><select id="steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="sensitivity">STEERING SENSITIVITY</label><input id="sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div></details>
+<details class="control-details"><summary>Control settings</summary><div class="control-settings"><label for="steering">PHONE STEERING</label><select id="steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='drag'}<p class="setup-note">Hold BOOST, or pull beyond the pad’s outer ring.</p>{/if}<label for="sensitivity">STEERING SENSITIVITY</label><input id="sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div></details>
         <div class="panel-bottom"><span class="live-dot"></span> WEBRTC DIRECT LINK <span>2 PLAYERS MAX</span></div>
       </section>
 
@@ -208,6 +210,7 @@
       {#if controlMode==='drag'}<button aria-label="Drag to steer" class:boost-active={steeringBoost} class="touch-pad" onpointerdown={touchMove} onpointermove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))touchMove(e);}} onpointerup={releaseSteering} onpointercancel={releaseSteering} onlostpointercapture={releaseSteering}><span class="touch-stick" style:transform={`translate(${stick.x*28}px,${stick.z*28}px)`}>✥</span><span class="touch-boost-badge" aria-live="polite">{steeringBoost ? 'BOOST' : ''}</span></button>{:else}<button class="calibrate" onclick={()=>tilt.calibrate()}>◎<br/>CALIBRATE TILT</button>{/if}
       <span class="touch-label">{controlMode==='drag'?(steeringBoost?'OUTER BOOST ACTIVE':'DRAG TO STEER · PULL OUT TO BOOST'):'TILT TO STEER'}</span>
     </div><div class="flight-actions">
+      <button aria-label="Hold to boost" class:held={boostHeld} onpointerdown={e=>holdAction(e,'boost')} onpointerup={()=>releaseAction('boost')} onpointercancel={()=>releaseAction('boost')} onlostpointercapture={()=>releaseAction('boost')}>»<small>BOOST</small></button>
       <button aria-label="Hold to climb" class:held={liftHeld} onpointerdown={e=>holdAction(e,'lift')} onpointerup={()=>releaseAction('lift')} onpointercancel={()=>releaseAction('lift')} onlostpointercapture={()=>releaseAction('lift')}>↑<small>CLIMB</small></button>
     </div>{/if}
     {#if paused || hud?.over || error}
@@ -215,7 +218,7 @@
         <p class="eyebrow">{error ? 'LINK INTERRUPTED' : hud?.over ? 'END OF TRANSMISSION' : 'FREQUENCY ON HOLD'}</p>
         <h2>{error ? 'Signal lost.' : hud?.over ? 'Into the afterlight.' : 'Catch your breath.'}</h2>
         <p>{error || (hud?.over ? 'The city takes this one. Your next run is waiting.' : solo ? 'Your run is paused.' : 'Both ships are paused. Each pilot must clear their own pause to resume.')}</p>
-<div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
+<div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='drag'}<p class="setup-note">Hold BOOST, or pull beyond the pad’s outer ring.</p>{/if}<label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
         <div class="end-stats"><div><small>SURVIVED</small><strong>{time(hud?.time)}</strong></div><div><small>TEAM SCORE</small><strong>{hud?.score ?? 0}</strong></div></div>
         {#if !hud?.over && !error}<button class="primary full" onclick={() => togglePause()} disabled={!flags[me]}>{flags[me] ? 'RESUME FLIGHT' : 'WAITING FOR WINGMATE'} <span>→</span></button>{/if}
         {#if hud?.over}<button class="primary full" onclick={playAgain} disabled={replayPending || (!solo && !network?.connection?.open)}>{replayPending ? 'WAITING FOR WINGMATE…' : 'PLAY AGAIN'} <span>↻</span></button>{/if}

@@ -28,15 +28,16 @@ export class Engine {
     this.frame = this.frame.bind(this); this.last = performance.now(); this.raf = requestAnimationFrame(this.frame);
   }
   start({ host = true, solo = false, network = null, settings = {} }) {
-    const wasPaused = this.paused;
+    cancelAnimationFrame(this.raf);
     clearInterval(this.inputTimer);
     this.network = network; this.localId = host ? 0 : 1; this.mode = host ? 'host' : 'client'; this.sim = host ? new Simulation({ solo, settings }) : null;
-    if (this.sim) this.sim.state.players[0].boost = CRUISE_SPEED;
+    if (this.sim) this.sim.state.players.forEach(p => { p.boost = CRUISE_SPEED; });
     this.settings = settings; this.applyColors(settings.colors); this.world.resetCamera(); this.state = this.sim?.state ?? null; this.accumulator = 0; this.keys.clear(); this.paused = false;
+    this.lastHudTime = null; this.previousPlayers = null; this.snapshotClock = 0; this.hudClock = 0; this.remoteInputTime = performance.now();
     this.predictedPlayer = null; this.predictionSteps = []; this.remoteSnapshots = []; this.presentationOffset = { x: 0, y: 0, z: 0 }; this.statsClock = 0; this.statsFrames = 0;
     this.inputTimer = setInterval(() => { if (this.mode === 'client') this.network?.send({ type: 'input', input: this.paused ? { x: 0, z: 0 } : this.input() }); }, 1000 / 30);
     this.last = performance.now();
-    if (wasPaused) this.raf = requestAnimationFrame(this.frame);
+    this.raf = requestAnimationFrame(this.frame);
   }
   input() { const turbo = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.actions.boost; return { x: Number(this.keys.has('KeyD') || this.keys.has('ArrowRight')) - Number(this.keys.has('KeyA') || this.keys.has('ArrowLeft')) + this.touch.x, z: Number(this.keys.has('KeyS') || this.keys.has('ArrowDown')) - Number(this.keys.has('KeyW') || this.keys.has('ArrowUp')) + this.touch.z, boost:turbo, turbo, cruise:true, lift:this.keys.has('Space') || this.actions.lift }; }
   applyColors(colors = ['cyan','coral']) {
@@ -53,7 +54,8 @@ export class Engine {
     state.obstacles = cityObstacles(state.time, state.players.filter(p => p.active && p.hp > 0));
     this.remoteSnapshots.push({ time: state.time, players: state.players.map(p => ({ ...p })) });
     this.remoteSnapshots = this.remoteSnapshots.filter(snapshot => snapshot.time >= state.time - .35).slice(-10);
-    this.state = state; this.onHud(state);
+    this.state = state;
+    if (state.over || !this.lastHudTime || state.time - this.lastHudTime >= .1) { this.onHud(state); this.lastHudTime = state.time; }
     this.predictedPlayer = { ...state.players[this.localId] };
     this.predictionSteps = collision ? [] : (this.predictionSteps ?? []).filter(step => step.time > state.time);
     for (const step of this.predictionSteps) if (this.predictedPlayer.hp > 0) advanceFlight(this.predictedPlayer, step.input, Math.min(step.dt, step.time-state.time), step.time);
@@ -82,19 +84,21 @@ export class Engine {
     const dt = Math.min((now - this.last) / 1000, 0.1); this.last = now;
     if (this.mode === 'host') {
       this.accumulator += dt; this.sim.setInput(0, this.input());
-      if (now - (this.remoteInputTime ?? 0) > 300) this.sim.setInput(1, { x: 0, z: 0 });
-      while (this.accumulator >= STEP) { this.sim.tick(); this.accumulator -= STEP; }
+      if (now - (this.remoteInputTime ?? 0) > 300) this.sim.setInput(1, { x: 0, z: 0, cruise: true });
+      while (this.accumulator >= STEP) { this.previousPlayers = this.sim.state.players.map(p => ({ ...p })); this.sim.tick(); this.accumulator -= STEP; }
       this.state = this.sim.state; this.snapshotClock += dt; this.hudClock += dt;
       if (this.snapshotClock >= 0.05 || this.state.over) { const { obstacles, ...snapshot } = this.sim.snapshot(); this.network?.send({ type: 'snapshot', state: snapshot }); this.snapshotClock = 0; }
       if (this.hudClock >= 0.1 || this.state.over) { this.onHud(this.sim.snapshot()); this.hudClock = 0; }
     }
     if (this.mode === 'client' && this.state && this.predictedPlayer) {
-      const predictionDt = Math.max(0, Math.min(dt, this.state.time + .2 - this.clientTime));
-      if (predictionDt > 0) {
+      this.accumulator += dt;
+      while (this.accumulator >= STEP && this.clientTime + STEP <= this.state.time + .2) {
+        const predictionDt = STEP; this.accumulator -= STEP;
         this.clientTime += predictionDt;
         const input = this.input(); if (this.predictedPlayer.hp > 0) advanceFlight(this.predictedPlayer, input, predictionDt, this.clientTime);
         this.predictionSteps.push({ time: this.clientTime, dt: predictionDt, input });
       }
+      this.accumulator = Math.min(this.accumulator, STEP);
     }
     this.attractTime += dt; this.statsClock += dt; this.statsFrames++;
     if (this.statsClock >= .5) {
@@ -106,17 +110,17 @@ export class Engine {
       const smoothing = Math.exp(-dt * 18);
       this.presentationOffset.x *= smoothing; this.presentationOffset.y *= smoothing; this.presentationOffset.z *= smoothing;
     }
-    this.draw(dt); this.world.render(this.renderTime(), this.mode === 'client' ? this.renderPlayer() : this.state?.players[this.localId], dt, this.state?.settings?.difficulty === 'brutal');
+    this.draw(dt); this.world.render(this.renderTime(), this.renderPlayer(), dt, this.state?.settings?.difficulty === 'brutal');
     if (this.state?.over) { this.setPaused(true); return; }
     this.raf = requestAnimationFrame(this.frame);
   }
-  renderTime() { return this.mode === 'client' && this.state ? this.clientTime ?? this.state.time : this.state?.time ?? this.attractTime; }
+  renderTime() { return this.mode === 'client' && this.state ? this.clientTime ?? this.state.time : this.mode === 'host' && this.state ? Math.max(0, this.state.time - STEP + this.accumulator) : this.attractTime; }
   remotePlayer(id) {
     if (this.mode !== 'client' || id === this.localId || this.remoteSnapshots.length === 0) return this.state?.players[id];
     // Keep a small authoritative presentation buffer for the wingmate. Local
     // input remains predicted immediately; only the remote pilot is delayed a
     // fraction of a snapshot so packet jitter does not read as rubber-banding.
-    const target = (this.state?.time ?? 0) - .08;
+    const target = Math.min(this.state.time, this.renderTime() - .1);
     const snapshots = this.remoteSnapshots;
     let before = snapshots[0], after = snapshots.at(-1);
     for (let i = 0; i < snapshots.length; i++) {
@@ -128,22 +132,30 @@ export class Engine {
     const span = after.time - before.time;
     const t = span > 0 ? Math.max(0, Math.min(1, (target - before.time) / span)) : 1;
     const lerp = (key, fallback = 0) => (a[key] ?? fallback) + ((b[key] ?? fallback) - (a[key] ?? fallback)) * t;
-    return { ...b, x: lerp('x'), z: lerp('z'), y: lerp('y'), vx: lerp('vx'), vy: lerp('vy'), boost: lerp('boost') };
+    return { ...b, x: lerp('x'), z: lerp('z') + (this.renderTime() - target) * FLIGHT_SPEED, y: lerp('y'), vx: lerp('vx'), vy: lerp('vy'), boost: lerp('boost') };
+  }
+  hostPlayer(id) {
+    const b = this.state?.players[id], a = this.previousPlayers?.[id];
+    if (!a || !b) return b;
+    const t = Math.min(1, this.accumulator / STEP), p = { ...b };
+    for (const key of ['x', 'y', 'z', 'vx', 'vy', 'boost']) p[key] = a[key] + (b[key] - a[key]) * t;
+    return p;
   }
   renderPlayer() {
+    if (this.mode === 'host') return this.hostPlayer(this.localId);
     if (this.mode !== 'client' || !this.predictedPlayer) return this.state?.players[this.localId];
     return { ...this.predictedPlayer, x: this.predictedPlayer.x + this.presentationOffset.x, y: this.predictedPlayer.y + this.presentationOffset.y, z: this.predictedPlayer.z + this.presentationOffset.z };
   }
   draw(dt) {
-    const time = this.renderTime(), age = Math.max(0, time - (this.state?.time ?? time));
+    const time = this.renderTime(), age = time - (this.state?.time ?? time);
     const orient = (object, z) => {
       const f=courseFrame(time*FLIGHT_SPEED-z);
       object.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(f.right.x,f.right.y,f.right.z),new THREE.Vector3(f.up.x,f.up.y,f.up.z),new THREE.Vector3(-f.forward.x,-f.forward.y,-f.forward.z)));
     };
     this.ships.forEach((ship, i) => {
       const remote = this.mode === 'client' && i !== this.localId;
-      const source = remote ? this.remotePlayer(i) : this.state?.players[i];
-      const extrapolation = remote ? 0 : age;
+      const source = remote ? this.remotePlayer(i) : this.mode === 'host' ? this.hostPlayer(i) : this.state?.players[i];
+      const extrapolation = remote || this.mode === 'host' ? 0 : age;
       const p = this.mode === 'client' && i === this.localId ? this.renderPlayer() : source ? {...source, z:source.z-(source.boost ?? 0)*extrapolation, x:source.x+(source.vx ?? 0)*extrapolation} : null; ship.visible = !p || (p.active && p.hp > 0);
       const z = p?.z ?? 7, point = worldPosition(p?.x ?? (i ? 4 : -4), (p?.y ?? 0) + Math.sin(time*4+i)*.06, z, time);
       ship.position.set(point.x,point.y,point.z);orient(ship,z);
