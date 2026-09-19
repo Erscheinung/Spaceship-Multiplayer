@@ -81,7 +81,7 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
  .pilot-card .eyebrow{margin-bottom:4px}
  .telemetry-strip{margin-top:4px}
  .flight-instruments{top:166px}
- .touch-controls{left:max(24px,env(safe-area-inset-left));align-items:center;width:104px}
+ .touch-controls{left:max(clamp(64px,20vw,100px),env(safe-area-inset-left));align-items:center;width:104px}
  .touch-label{white-space:normal;max-width:120px;line-height:1.4}
 }
 @media(max-height:500px) and (pointer:coarse){.flight-instruments{top:143px}}

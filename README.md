@@ -36,7 +36,7 @@ For two devices on the same Wi-Fi, open the Network URL printed by Vite on the s
 | Shoot | Automatic; assisted in Scenic/Survival, straight ahead in Brutal |
 | Pause / resume | Escape or the pause button |
 | Touch movement | Drag pad, or optional calibrated tilt in Control settings |
-| Touch boost | Hold the BOOST button, or pull beyond the drag pad’s outer ring; release to coast |
+| Touch boost | Pull beyond the drag pad’s outer ring; release to coast |
 | Touch climb | Hold the CLIMB button while steering |
 | Upgrade | Fly near cores to attract and collect them |
 
@@ -179,3 +179,5 @@ Merged `feat/illustrated-city-flight` into `main`; continued all work on `main`.
 Compacted the pilot HUD; restored an independent touch boost button alongside outer-ring drag boost, with a steering dead zone, radial clamping, pointer ownership and boost hysteresis. Host presentation interpolates fixed simulation steps; guest prediction uses the same step size, and remote interpolation advances between packets in the correct route frame. Removed per-packet telemetry UI updates and redundant WebGL multisampling (FXAA remains). Backpressure includes PeerJS's internal queue; browser suspension and temporary ICE interruptions receive a recovery window.
 
 Validation: Svelte check has zero errors/warnings, all 26 unit tests pass, the production build succeeds, and the mobile Chromium test passes with compact-card bounds and drag boost checks. The mobile screenshot was inspected. A two-peer Chromium run completed joining, snapshots and both pilots' pause/resume checks, but its departure assertion used the old timeout. Subsequent full attempts timed out and reported browser-context disposal errors; a complete passing multiplayer browser run and actual cross-network/device stability are **not verified** by this repair. Both pilots must reload for protocol v6.
+
+Touch-control follow-up: removed the separate boost button; outer-ring drag boost remains. The steering pad now sits farther right (64–100 px responsive left inset) to leave room for leftward finger travel.

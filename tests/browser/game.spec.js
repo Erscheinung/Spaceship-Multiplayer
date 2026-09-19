@@ -66,7 +66,7 @@ test('mobile terminal fits and touch steering is available', async ({ page }) =>
   await page.locator('button.practice').click(); await expect(page.getByRole('button', { name: 'Drag to steer' })).toBeVisible();
   await expect(page.locator('.run-stats strong')).not.toHaveText('00:00');
   await expect(page.locator('.telemetry-strip')).toContainText('FPS', { timeout: 3000 });
-  await expect(page.getByRole('button', { name: 'Hold to boost' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Hold to boost' })).toHaveCount(0);
   const cards = await page.locator('.hud > *').evaluateAll(nodes => nodes.map(n => {const r=n.getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom};}));
   expect(cards[0].right).toBeLessThan(cards[1].left); expect(cards[1].right).toBeLessThan(cards[2].left);expect(cards[2].right).toBeLessThanOrEqual(402);
   expect(Math.max(...cards.map(c=>c.bottom))).toBeLessThan(160);
