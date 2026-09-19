@@ -38,7 +38,7 @@
       clearTimeout(damageNoticeTimer);
       damageNoticeTimer = setTimeout(() => { damageNotice = ''; damageFlash = false; }, 1800);
     }
-    if (next?.over) clearDamageFeedback();
+    if (next?.over) { clearDamageFeedback(); releaseFlightControls(); }
   }
   function initEngine() {
     try { engine = new Engine(canvas, { onHud: updateHud, onStats: stats => { telemetry = stats; }, onPause: togglePause, onError: fail }); ready = true; }
@@ -49,7 +49,8 @@
     busy = false; screen = 'game'; hud = null; flags = [false, false]; replayPending = false; telemetry = { fps: 0, packetLoss: null }; clearDamageFeedback();
     if (settings.difficulty) difficulty = settings.difficulty;
     if (settings.colors?.[host ? 0 : 1]) shipColor = settings.colors[host ? 0 : 1];
-    engine.start({ host, solo, network, settings }); boostHeld=false; liftHeld=false; steeringBoost=false; stick={x:0,z:0};tilt?.calibrate(); if (document.hidden) togglePause(true);
+    releaseFlightControls();
+    engine.start({ host, solo, network, settings }); tilt?.calibrate(); if (document.hidden) togglePause(true);
   }
   async function connect(create) {
     if (busy || !ready) return;

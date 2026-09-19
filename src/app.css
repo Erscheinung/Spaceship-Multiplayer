@@ -83,5 +83,6 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
  .flight-instruments{top:166px}
  .touch-controls{left:max(clamp(64px,20vw,100px),env(safe-area-inset-left));align-items:center;width:104px}
  .touch-label{white-space:normal;max-width:120px;line-height:1.4}
+ .flight-actions{bottom:calc(max(25px,env(safe-area-inset-bottom)) + 38px)}
 }
-@media(max-height:500px) and (pointer:coarse){.flight-instruments{top:143px}}
+@media(max-height:500px) and (pointer:coarse){.flight-instruments{top:143px}.flight-actions{bottom:44px}}
