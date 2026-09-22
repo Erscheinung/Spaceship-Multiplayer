@@ -86,3 +86,7 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
  .flight-actions{bottom:calc(max(25px,env(safe-area-inset-bottom)) + 38px)}
 }
 @media(max-height:500px) and (pointer:coarse){.flight-instruments{top:143px}.flight-actions{bottom:44px}}
+
+/* Soundtrack control: compact enough for the terminal header and pause card. */
+.music-toggle{display:inline-flex;align-items:center;gap:6px;padding:5px 7px;border:1px solid #40546155;background:#f7f0de99;color:#344f58;font-size:8px;letter-spacing:1px;line-height:1;white-space:nowrap;pointer-events:auto}.music-toggle:hover{border-color:#b54f39;color:#a84338}.music-toggle.muted{color:#667779;background:#e7e9dc99}.music-toggle span{font-size:13px;line-height:.8}.pause-music-toggle{margin:4px 0 8px}.music-note{font-size:10px!important;color:#a84338!important;margin:0 0 10px!important}
+@media(max-width:680px){.header-right .music-toggle{font-size:0;padding:5px}.header-right .music-toggle span{font-size:15px}.pause-music-toggle{font-size:9px!important;padding:8px 10px!important}}

@@ -119,9 +119,14 @@ test('PeerJS backlog drops stale updates but still sends pause control', () => {
   const { session } = setup(); const sent = [];
   session.connection = { open: true, bufferSize: 1, dataChannel: { bufferedAmount: 0 }, send: m => sent.push(m), close() {} };
   session.send({ type: 'snapshot', state: { time: 1 } });
+  session.send({ type: 'snapshot', state: { time: 2 } });
   session.send({ type: 'pause', flags: [true, false] });
-  assert.equal(session.packetStats.dropped, 1);
+  assert.equal(session.packetStats.dropped, 2);
   assert.equal(sent.length, 1); assert.equal(sent[0].type, 'pause');
+  assert.equal(session.pendingStreams.snapshot.state.time, 2);
+  session.connection.bufferSize = 0;
+  session.flushPendingStreams();
+  assert.equal(sent.length, 2); assert.equal(sent[1].type, 'snapshot'); assert.equal(sent[1].state.time, 2);
   session.destroy();
 });
 
@@ -132,8 +137,72 @@ test('temporary ICE disconnect recovers without ending the run', () => {
   session.attach(c); c.open = true; c.emit('open');
   session.receive({ type: 'start', settings: {} });
   pc.iceConnectionState = 'disconnected'; changed();
-  assert.ok([...timers.values()].some(t => t.delay === 30000));
+  assert.ok([...timers.values()].some(t => t.delay === 20000));
   pc.iceConnectionState = 'connected'; changed();
-  assert.equal([...timers.values()].some(t => t.delay === 30000), false);
+  assert.equal([...timers.values()].some(t => t.delay === 20000), false);
   assert.equal(session.closed, false); session.destroy();
+});
+
+test('an established route enters bounded recovery instead of ending on close', () => {
+  const { session, errors } = setup();
+  const c = new EventEmitter(); c.open = true; c.close = () => c.emit('close');
+  session.attach(c); c.emit('open'); session.receive({ type: 'start', settings: {} });
+  session.transportLost(c, 'test recovery');
+  assert.equal(session.recovering, true);
+  assert.equal(session.closed, false);
+  assert.equal(session.connection, null);
+  assert.deepEqual(errors, []);
+  session.destroy();
+});
+
+test('a fresh stream update supersedes a queued older one after pressure clears', () => {
+  const { session } = setup(); const sent = [];
+  session.connection = { open: true, bufferSize: 1, dataChannel: { bufferedAmount: 0 }, send: m => sent.push(m), close() {} };
+  session.send({ type: 'input', input: { x: -1, z: 0 } });
+  session.connection.bufferSize = 0;
+  session.send({ type: 'input', input: { x: 1, z: 0 } });
+  session.flushPendingStreams();
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].input.x, 1);
+  session.destroy();
+});
+
+test('an active run only accepts a replacement from its original peer', () => {
+  const { session } = setup();
+  session.host = true; session.started = true; session.guestPeerId = 'original';
+  const old = new EventEmitter(); old.open = true; old.close = () => old.emit('close');
+  session.connection = old;
+  const stranger = new EventEmitter(); stranger.peer = 'stranger'; stranger.metadata = { game: 'neon-wing-city-v7' };
+  session.acceptConnection(stranger);
+  assert.equal(session.connection, old);
+  const replacement = new EventEmitter(); replacement.peer = 'original'; replacement.metadata = { game: 'neon-wing-city-v7' }; replacement.close = () => {};
+  session.acceptConnection(replacement);
+  assert.equal(session.connection, replacement);
+  assert.equal(session.recovering, true);
+  session.destroy();
+});
+
+test('old-run state and pause cannot contaminate a replay', () => {
+  const { session } = setup(); const snapshots = [], pauses = [];
+  session.lastReplayId = 2;
+  session.events.snapshot = state => snapshots.push(state);
+  session.events.pause = flags => pauses.push(flags);
+  session.receive({ type: 'snapshot', sequence: 5, streamSequence: 5, runId: 1, state: { players: [] } });
+  session.receive({ type: 'pause', sequence: 6, runId: 1, flags: [true, true] });
+  assert.equal(snapshots.length, 0); assert.equal(pauses.length, 0);
+  session.receive({ type: 'snapshot', sequence: 7, streamSequence: 7, runId: 2, state: { players: [] } });
+  assert.equal(snapshots.length, 1);
+  session.destroy();
+});
+
+test('disposable streams use the non-retransmitted channel while controls stay reliable', () => {
+  const { session } = setup(); const reliable = [], disposable = [];
+  session.connection = { open: true, send: m => reliable.push(m), close() {} };
+  session.streamChannel = { readyState: 'open', bufferedAmount: 0, send: data => disposable.push(JSON.parse(data)) };
+  session.send({ type: 'input', input: { x: 0, z: 0 } });
+  session.send({ type: 'pause', flags: [true, false] });
+  session.send({ type: 'snapshot', state: { over: true } });
+  assert.equal(disposable.length, 1); assert.equal(disposable[0].type, 'input');
+  assert.deepEqual(reliable.map(m => m.type), ['pause', 'snapshot']);
+  session.destroy();
 });

@@ -2,9 +2,11 @@ import { flightSettings, SHIP_COLORS } from '../game/settings.js';
 import Peer from 'peerjs';
 import { env } from '$env/dynamic/public';
 
-const PROTOCOL = 'neon-wing-skyway-v6';
+const PROTOCOL = 'neon-wing-city-v7';
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const STREAM_TYPES = new Set(['input', 'snapshot']);
+const STREAM_BUFFER_LIMIT = 16 * 1024;
+const RECOVERY_GRACE = 45000;
 export function roomCode() {
   return [...crypto.getRandomValues(new Uint8Array(4))].map(n => alphabet[n % alphabet.length]).join('');
 }
@@ -19,15 +21,27 @@ export class PeerSession {
     this.events = events; this.host = false; this.connection = null; this.closed = false;
     this.signalingReady = false; this.waitingForSignal = false;
     this.pauseFlags = [false, false]; this.started = false; this.lastSeen = Date.now();
+    this.pendingStreams = {}; this.pendingDrainTimer = null;
+    this.streamChannel = null; this.guestPeerId = null;
+    this.recovering = false; this.recoveryAttempt = 0; this.recoveryDeadline = 0; this.recoveryTimer = null;
     this.heartbeatTime = Date.now();
     this.heartbeat = setInterval(() => {
       const now = Date.now();
       // Give queued packets time to arrive after browser suspension or a long frame.
       if (now - this.heartbeatTime > 6000) this.lastSeen = now;
       this.heartbeatTime = now;
-      if (!this.connection?.open) return;
+      if (this.recovering && now >= this.recoveryDeadline) {
+        this.fail('The route could not be restored. Return to the menu and reconnect.'); return;
+      }
+      if (!this.connection?.open) {
+        if (this.recovering && now >= this.recoveryDeadline) this.fail('The route could not be restored. Return to the menu and reconnect.');
+        return;
+      }
       this.send({ type: 'ping', sent: Date.now() });
-      if (now - this.lastSeen > 30000) this.fail('Connection lost. Return to the menu to reconnect.');
+      if (now - this.lastSeen > 30000) {
+        if (this.started) this.transportLost(this.connection, 'Heartbeat missed · rebuilding the route…');
+        else this.fail('Connection lost. Return to the menu to reconnect.');
+      }
     }, 2000);
   }
   async options() {
@@ -42,7 +56,7 @@ export class PeerSession {
     if (env.PUBLIC_TURN_URL) iceServers.push({ urls: env.PUBLIC_TURN_URL.split(',').map(s=>s.trim()), username: env.PUBLIC_TURN_USERNAME, credential: env.PUBLIC_TURN_CREDENTIAL });
     this.hasRelay = iceServers.some(s => [s.urls].flat().some(u => /^turns?:/.test(u)));
     if (!this.hasRelay) this.relayWarning ||= 'This deployment has no TURN relay configured. Set METERED_DOMAIN and METERED_API_KEY in Vercel and redeploy.';
-    return { debug: 0, ...(env.PUBLIC_PEER_HOST ? { host: env.PUBLIC_PEER_HOST, port: Number(env.PUBLIC_PEER_PORT || 443), path: env.PUBLIC_PEER_PATH || '/', secure: env.PUBLIC_PEER_SECURE !== 'false' } : {}), config: { iceServers, iceCandidatePoolSize: 4 } };
+    return { debug: 0, ...(env.PUBLIC_PEER_HOST ? { host: env.PUBLIC_PEER_HOST, port: Number(env.PUBLIC_PEER_PORT || 443), path: env.PUBLIC_PEER_PATH || '/', secure: env.PUBLIC_PEER_SECURE !== 'false' } : {}), config: { iceServers, iceCandidatePoolSize: 4, iceTransportPolicy: 'all' } };
   }
   async openPeer(id) {
     const options = await this.options();
@@ -65,12 +79,12 @@ export class PeerSession {
       // must never tear down its replacement. The connection owns that lifecycle.
       if (e.type === 'webrtc') return;
       if (e.type === 'peer-unavailable') {
-        if (!this.host && !this.started) this.connectionFailed(this.connection);
+        if (!this.host && this.connection && !this.connection.open) this.connectionFailed(this.connection);
         return;
       }
-      if (e.type === 'network' || e.type === 'disconnected') {
+      if (e.type === 'network' || e.type === 'disconnected' || e.type === 'socket-error' || e.type === 'socket-closed') {
         this.signalingReady = false;
-        this.events.status?.('Reconnecting to the room directory…');
+        this.events.status?.(this.started ? 'Room directory interrupted · keeping the flight alive…' : 'Reconnecting to the room directory…');
         if (!this.host && !this.started && this.connection && !this.connection.open) this.connectionFailed(this.connection);
         return;
       }
@@ -79,7 +93,7 @@ export class PeerSession {
     peer.on('open', () => {
       if (this.closed || peer !== this.peer) return;
       this.signalingReady = true;
-      if (this.waitingForSignal && !this.closed && !this.host && !this.started) {
+      if (this.waitingForSignal && !this.closed && !this.host && (!this.started || this.recovering)) {
         this.waitingForSignal = false;
         clearTimeout(this.retryTimer); this.retryTimer = null;
         this.connectGuest();
@@ -91,24 +105,33 @@ export class PeerSession {
         try { peer.reconnect(); } catch { /* A concurrent reconnect/open event owns recovery. */ }
       }
     });
-    peer.on('connection', c => {
+    peer.on('connection', c => this.acceptConnection(c));
+    return peer.id;
+  }
+  acceptConnection(c) {
       if (this.closed || !this.host || c.metadata?.game !== PROTOCOL) {
         c.on('open', () => { c.send({ type: 'reject', reason: 'Room is full or incompatible.' }); setTimeout(() => c.close(), 300); });
+        return;
+      }
+      // Only the original peer may replace a route for an active run. A new
+      // tab or another player must never inherit the disconnected pilot.
+      if (this.started && c.peer !== this.guestPeerId) {
+        c.on('open', () => { c.send({ type: 'reject', reason: 'This run belongs to another wingmate.' }); setTimeout(() => c.close(), 300); });
         return;
       }
       // A guest may retry while the host's previous ICE negotiation is still
       // pending. Release that unusable slot so the replacement can be adopted.
       if (this.connection) {
-        if (this.started || this.connection.open) {
+        if (!this.started && this.connection.open) {
           c.on('open', () => { c.send({ type: 'reject', reason: 'Room is full or incompatible.' }); setTimeout(() => c.close(), 300); });
           return;
         }
-        this.connectionFailed(this.connection);
+        if (this.started) this.transportLost(this.connection);
+        else this.connectionFailed(this.connection);
       }
-      this.settings.colors[1] = Object.hasOwn(SHIP_COLORS,c.metadata?.color) ? c.metadata.color : 'coral';
+      this.guestPeerId = c.peer;
+      if (!this.started) this.settings.colors[1] = Object.hasOwn(SHIP_COLORS,c.metadata?.color) ? c.metadata.color : 'coral';
       this.attach(c);
-    });
-    return peer.id;
   }
   async create() {
     this.host = true;
@@ -127,7 +150,7 @@ export class PeerSession {
     this.connectGuest();
   }
   connectGuest() {
-    if(this.closed || this.host || this.started || !this.peer || this.peer.destroyed) return;
+    if(this.closed || this.host || (!this.recovering && this.started) || !this.peer || this.peer.destroyed) return;
     if (this.connection?.open) return;
     if(this.peer.disconnected || !this.peer.open || !this.signalingReady) {
       this.waitingForSignal = true;
@@ -138,14 +161,15 @@ export class PeerSession {
       return;
     }
     this.waitingForSignal = false;
-    this.attempt++;
-    if (this.attempt === 3 && this.hasRelay) this.peer.options.config.iceTransportPolicy = 'relay';
-    this.events.status?.(this.attempt === 3 && this.hasRelay ? 'Trying a dedicated relay route…' : `Connecting · attempt ${this.attempt}/3${this.hasRelay ? '' : ' · relay unavailable; direct connection only'}…`);
+    const attempt = this.recovering ? ++this.recoveryAttempt : ++this.attempt;
+    if (attempt >= (this.recovering ? 2 : 3) && this.hasRelay) this.peer.options.config.iceTransportPolicy = 'relay';
+    this.events.status?.(attempt === 3 && this.hasRelay ? 'Trying a dedicated relay route…' : `${this.recovering ? 'Restoring route' : 'Connecting'} · attempt ${attempt}/3${this.hasRelay ? '' : ' · relay unavailable; direct connection only'}…`);
     this.attach(this.peer.connect(this.code, { reliable:false, serialization:'binary', metadata:{game:PROTOCOL,color:this.settings.colors[0]} }));
 
   }
   connectionFailed(connection) {
     if(this.closed || !connection || connection !== this.connection) return;
+    if (this.started) { this.transportLost(connection, 'Route negotiation interrupted · restoring the link…'); return; }
     clearTimeout(this.connectTimeout); clearTimeout(this.disconnectTimer); clearInterval(this.readyTimer); this.connection=null;connection.close();
     if (!this.started) {
       if(this.host) { this.events.status?.('Connection interrupted. Waiting for your wingmate to retry…'); return; }
@@ -161,39 +185,161 @@ export class PeerSession {
       : `Room unavailable or no route between devices. Check the code and keep the host's lobby open. ${this.relayWarning}`);
   }
   attach(connection) {
+    clearTimeout(this.connectTimeout); clearInterval(this.readyTimer);
     this.connection=connection;
     if (this.host) this.events.status?.('Wingmate found · negotiating direct / relay routes…');
     this.connectTimeout=setTimeout(()=>this.connectionFailed(connection),22000);
     const pc = connection.peerConnection;
-    pc?.addEventListener('iceconnectionstatechange', () => {
+    if (this.host) this.setupStreamChannel(connection);
+    const iceStateChanged = () => {
       if (connection !== this.connection || this.closed) return;
       clearTimeout(this.disconnectTimer);
-      if (pc.iceConnectionState === 'disconnected') {
+      const state = connection.peerConnection?.iceConnectionState;
+      if (state === 'disconnected') {
         this.events.status?.('Signal interrupted · recovering the route…');
-        this.disconnectTimer = setTimeout(() => this.connectionFailed(connection), 30000);
+        this.disconnectTimer = setTimeout(() => this.transportLost(connection, 'Signal interrupted · restoring the link…'), 20000);
       }
-      if (pc.iceConnectionState === 'failed') this.connectionFailed(connection);
-    });
+      if (state === 'failed') this.transportLost(connection, 'ICE route failed · trying another path…');
+    };
+    pc?.addEventListener('iceconnectionstatechange', iceStateChanged);
+    connection.on?.('iceStateChanged', iceStateChanged);
+    if (connection.dataChannel) {
+      connection.dataChannel.bufferedAmountLowThreshold = STREAM_BUFFER_LIMIT / 2;
+      connection.dataChannel.addEventListener?.('bufferedamountlow', () => this.flushPendingStreams());
+    }
     connection.on('open',()=>{
       if(connection!==this.connection || this.closed)return;
       clearTimeout(this.connectTimeout);
       this.connectTimeout=setTimeout(()=>this.connectionFailed(connection),10000);
+      this.setupStreamChannel(connection);
       this.lastSeen=Date.now();this.events.status?.('Route established · synchronizing launch…');this.events.connected?.();
     });
     connection.on('data',message=>{if(connection===this.connection)this.receive(message);});
-    connection.on('close',()=>{if(connection!==this.connection||this.closed)return;if(this.started)this.fail('Your wingmate disconnected. This run has ended.');else this.connectionFailed(connection);});
-    connection.on('error',()=>this.connectionFailed(connection));
+    connection.on('close',()=>{if(connection!==this.connection||this.closed)return;if(this.started)this.transportLost(connection, 'The route closed · restoring the link…');else this.connectionFailed(connection);});
+    connection.on('error',()=>{if (this.started) this.transportLost(connection, 'The route reported an error · restoring the link…'); else this.connectionFailed(connection);});
   }
   send(message) {
     if (!this.connection?.open || this.closed) return;
+    if (STREAM_TYPES.has(message.type)) delete this.pendingStreams[message.type];
+    if (STREAM_TYPES.has(message.type) && !message.state?.over && this.isBackpressured()) {
+      // Keep one current update per stream. Queuing every snapshot turns a
+      // slow VPN into seconds of stale state and eventually trips PeerJS's
+      // own 8 MiB queue; control packets continue through immediately.
+      this.pendingStreams[message.type] = { ...message };
+      this.packetStats.dropped++;
+      this.schedulePendingDrain();
+      return false;
+    }
+    return this.transmit(message);
+  }
+  transmit(message) {
     const outgoing = { ...message };
     if (STREAM_TYPES.has(outgoing.type)) outgoing.streamSequence = ++this.streamSequences[outgoing.type];
-    // Drop disposable updates instead of accumulating seconds of stale state.
-    if (STREAM_TYPES.has(outgoing.type) && !outgoing.state?.over && (this.connection.dataChannel?.bufferedAmount > 16000 || this.connection.bufferSize > 0)) { this.packetStats.dropped++; return; }
-    try { this.connection.send({ ...outgoing, sequence: ++this.sequence }); } catch { this.fail('Could not send to your wingmate.'); }
+    outgoing.sequence = ++this.sequence;
+    outgoing.runId = this.host ? this.replayId : this.lastReplayId;
+    try {
+      if (STREAM_TYPES.has(message.type) && !message.state?.over && this.streamChannel?.readyState === 'open') {
+        const payload = JSON.stringify(outgoing);
+        // Stay below common SCTP message limits. Very large/final states use
+        // PeerJS's chunked reliable channel; routine state may expire in flight.
+        if (payload.length < 48000) { this.streamChannel.send(payload); return true; }
+      }
+      this.connection.send(outgoing); return true;
+    }
+    catch { if (this.started) this.transportLost(this.connection, 'Could not send to your wingmate · restoring the link…'); else this.fail('Could not send to your wingmate.'); return false; }
+  }
+  isBackpressured() {
+    const channel = this.streamChannel?.readyState === 'open' ? this.streamChannel : this.connection?.dataChannel;
+    return Number(channel?.bufferedAmount) > STREAM_BUFFER_LIMIT || Number(this.connection?.bufferSize) > 0;
+  }
+  setupStreamChannel(connection) {
+    const pc = connection.peerConnection;
+    if (!pc?.createDataChannel || connection.streamSetup) return;
+    connection.streamSetup = true;
+    const adopt = channel => {
+      if (channel.label !== 'neon-wing-state' || connection !== this.connection || this.closed) return;
+      this.streamChannel = channel;
+      channel.bufferedAmountLowThreshold = STREAM_BUFFER_LIMIT / 2;
+      channel.addEventListener('bufferedamountlow', () => { if (connection === this.connection) this.flushPendingStreams(); });
+      channel.addEventListener('message', event => {
+        if (connection !== this.connection || this.closed || typeof event.data !== 'string' || event.data.length > 48000) return;
+        try { const message = JSON.parse(event.data); if (STREAM_TYPES.has(message.type)) this.receive(message); } catch { /* Discard malformed disposable state. */ }
+      });
+      channel.addEventListener('close', () => { if (this.streamChannel === channel) this.streamChannel = null; });
+    };
+    // PeerJS treats every incoming channel as its own primary channel. Route
+    // our extra channel before that handler so control serialization is kept.
+    const peerDataChannel = pc.ondatachannel;
+    pc.ondatachannel = event => {
+      if (event.channel.label === 'neon-wing-state') adopt(event.channel);
+      else peerDataChannel?.call(pc, event);
+    };
+    if (!this.host) {
+      try { adopt(pc.createDataChannel('neon-wing-state', { ordered: false, maxRetransmits: 0 })); }
+      catch { /* The reliable connection remains available. */ }
+    }
+  }
+  schedulePendingDrain() {
+    if (this.pendingDrainTimer || this.closed) return;
+    this.pendingDrainTimer = setTimeout(() => { this.pendingDrainTimer = null; this.flushPendingStreams(); }, 75);
+  }
+  flushPendingStreams() {
+    if (this.closed || !this.connection?.open) return;
+    for (const type of ['snapshot', 'input']) {
+      const message = this.pendingStreams[type];
+      if (!message) continue;
+      if (this.isBackpressured()) { this.schedulePendingDrain(); return; }
+      delete this.pendingStreams[type];
+      this.transmit(message);
+    }
+  }
+  transportLost(connection, reason = 'Route interrupted · restoring the link…') {
+    if (this.closed || !connection || connection !== this.connection) return;
+    if (!this.started) { this.connectionFailed(connection); return; }
+    if (this.recovering) {
+      clearTimeout(this.connectTimeout); clearTimeout(this.disconnectTimer);
+      const old = this.connection;
+      this.connection = null;
+      try { old.close(); } catch { /* The route is already closed. */ }
+      this.scheduleRecoveryAttempt();
+      return;
+    }
+    this.recovering = true;
+    this.recoveryAttempt = 0;
+    this.recoveryDeadline = Date.now() + RECOVERY_GRACE;
+    this.streamChannel = null;
+    this.events.recovery?.(true);
+    clearTimeout(this.connectTimeout); clearTimeout(this.disconnectTimer);
+    clearTimeout(this.pendingDrainTimer); this.pendingDrainTimer = null; this.pendingStreams = {};
+    const old = this.connection;
+    this.connection = null;
+    try { old.close(); } catch { /* The route is already closed. */ }
+    this.events.status?.(reason);
+    this.scheduleRecoveryAttempt(0);
+  }
+  scheduleRecoveryAttempt(delay = Math.min(5000, 800 + this.recoveryAttempt * 700)) {
+    clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = null;
+      if (this.closed || !this.recovering) return;
+      if (this.host) return;
+      if (Date.now() >= this.recoveryDeadline) { this.fail('The route could not be restored. Return to the menu and reconnect.'); return; }
+      this.connectGuest();
+    }, delay);
+  }
+  finishRecovery() {
+    if (!this.recovering) return;
+    this.recovering = false;
+    this.recoveryAttempt = 0;
+    this.recoveryDeadline = 0;
+    clearTimeout(this.recoveryTimer); this.recoveryTimer = null;
+    this.events.status?.('Route restored · synchronizing the flight…');
+    this.events.recovery?.(false);
   }
   receive(d) {
     if (!d || typeof d !== 'object' || typeof d.type !== 'string') return;
+    if (d.type === 'leave') { this.fail('Your wingmate left the flight. Return to the terminal to reconnect.'); return; }
+    if (['input', 'snapshot', 'pause', 'pause-request', 'replay-request'].includes(d.type) && Number.isSafeInteger(d.runId) && d.runId !== (this.host ? this.replayId : this.lastReplayId)) return;
     this.lastSeen = Date.now();
     if (['input', 'snapshot', 'pause', 'pause-request', 'replay', 'replay-request'].includes(d.type)) {
       if (!Number.isSafeInteger(d.sequence) || d.sequence <= (this.receivedSequences[d.type] ?? -1)) return;
@@ -210,12 +356,27 @@ export class PeerSession {
     if (d.type === 'pong') { if (Number.isFinite(d.sent)) this.rtt = Math.max(0, Date.now() - d.sent); return; }
     if (d.type === 'reject') { this.fail(String(d.reason)); return; }
     if (this.host) {
-      if (d.type === 'ready') { clearTimeout(this.connectTimeout); this.send({ type: 'start', settings:this.settings }); if (!this.started) { this.started = true; this.events.start?.(this.settings); } this.publishPause(); }
+      if (d.type === 'ready') {
+        clearTimeout(this.connectTimeout);
+        this.send({ type: 'start', settings:this.settings, replayId: this.replayId, flags: this.pauseFlags });
+        if (!this.started) { this.started = true; this.events.start?.(this.settings); }
+        else this.finishRecovery();
+        this.publishPause();
+      }
       if (d.type === 'input' && validInput(d.input)) this.events.input?.(d.input);
       if (d.type === 'pause-request' && typeof d.paused === 'boolean') { this.pauseFlags[1] = d.paused; this.publishPause(); }
       if (d.type === 'replay-request' && this.started && Number.isSafeInteger(d.requestId) && d.requestId > this.lastReplayRequestId) { this.lastReplayRequestId = d.requestId; this.events.replayRequest?.(); }
     } else {
-      if (d.type === 'start' && !this.started) { this.started = true; clearTimeout(this.joinTimeout); clearTimeout(this.connectTimeout); clearInterval(this.readyTimer); this.settings=flightSettings(d.settings);this.events.start?.(this.settings); this.events.pause?.([...this.pauseFlags]); }
+      if (d.type === 'start') {
+        clearTimeout(this.joinTimeout); clearTimeout(this.connectTimeout); clearInterval(this.readyTimer);
+        this.settings=flightSettings(d.settings);
+        if (Number.isSafeInteger(d.replayId) && d.replayId > this.lastReplayId) {
+          this.lastReplayId = d.replayId; this.events.replay?.(this.settings);
+        }
+        if (Array.isArray(d.flags) && d.flags.length === 2 && d.flags.every(f => typeof f === 'boolean')) this.pauseFlags = d.flags;
+        if (!this.started) { this.started = true; this.events.start?.(this.settings); this.events.pause?.([...this.pauseFlags]); }
+        else { this.events.pause?.([...this.pauseFlags]); this.finishRecovery(); }
+      }
       if (d.type === 'snapshot' && d.state && Array.isArray(d.state.players)) this.events.snapshot?.(d.state);
       if (d.type === 'pause' && Array.isArray(d.flags) && d.flags.length === 2 && d.flags.every(f => typeof f === 'boolean')) {
         this.pauseFlags = d.flags; this.events.pause?.([...d.flags]);
@@ -223,7 +384,7 @@ export class PeerSession {
       if (d.type === 'replay' && d.settings && Number.isSafeInteger(d.replayId) && d.replayId > this.lastReplayId) { this.lastReplayId = d.replayId; this.settings = flightSettings(d.settings); this.pauseFlags = [false, false]; this.events.replay?.(this.settings); }
     }
   }
-  ready() { if (this.host) return; this.send({ type: 'ready' }); clearInterval(this.readyTimer); this.readyTimer = setInterval(() => { if (!this.started) this.send({ type: 'ready' }); }, 600); }
+  ready() { if (this.host) return; this.send({ type: 'ready' }); clearInterval(this.readyTimer); this.readyTimer = setInterval(() => { if (!this.started || this.recovering) this.send({ type: 'ready' }); }, 600); }
   setPaused(paused) {
     this.pauseFlags[this.host ? 0 : 1] = paused;
     if (this.host) this.publishPause(); else this.send({ type: 'pause-request', paused });
@@ -261,6 +422,6 @@ export class PeerSession {
     const total = this.packetStats.received + this.packetStats.lost + this.packetStats.dropped;
     return { packetLoss: total ? (this.packetStats.lost + this.packetStats.dropped) / total : null, rtt: Number.isFinite(this.rtt) ? this.rtt : null, received: this.packetStats.received, lost: this.packetStats.lost, dropped: this.packetStats.dropped };
   }
-  fail(message) { if (this.closed) return; this.events.error?.(message); this.destroy(); }
-  destroy() { this.closed = true; clearTimeout(this.joinTimeout); clearInterval(this.heartbeat); clearInterval(this.readyTimer); clearTimeout(this.disconnectTimer); clearTimeout(this.retryTimer); clearTimeout(this.connectTimeout); clearTimeout(this.replayTimer); clearTimeout(this.replayRequestTimer); this.connection?.close(); this.peer?.destroy(); }
+  fail(message) { if (this.closed) return; this.events.error?.(message); this.destroy(false); }
+  destroy(notify = true) { if (this.closed) return; if (notify && this.connection?.open) { try { this.connection.send({ type: 'leave' }); } catch { /* Best-effort explicit departure. */ } } this.closed = true; clearTimeout(this.joinTimeout); clearInterval(this.heartbeat); clearInterval(this.readyTimer); clearTimeout(this.disconnectTimer); clearTimeout(this.retryTimer); clearTimeout(this.connectTimeout); clearTimeout(this.replayTimer); clearTimeout(this.replayRequestTimer); clearTimeout(this.pendingDrainTimer); clearTimeout(this.recoveryTimer); this.pendingStreams = {}; this.connection?.close(); this.peer?.destroy(); }
 }

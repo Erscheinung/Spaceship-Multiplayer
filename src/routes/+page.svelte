@@ -3,26 +3,45 @@
   import { SHIP_COLORS, DIFFICULTIES } from '$lib/game/settings.js';
   import { FLIGHT_SPEED } from '$lib/game/course.js';
   import { TiltInput } from '$lib/game/TiltInput.js';
+  import { MusicController } from '$lib/audio/MusicController.js';
   let canvas, engine, network, Engine, PeerSession;
   let screen = 'menu', code = '', room = '', status = '', error = '', busy = false, ready = false, solo = false, host = true;
   let difficulty='normal', shipColor='cyan', controlMode='drag', sensitivity=1, tilt, controlMessage='', boostHeld=false, liftHeld=false, stick={x:0,z:0};
   let flags = [false, false], hud = null, copied = false, telemetry = { fps: 0, packetLoss: null }, replayPending = false;
   let damageNotice = '', damageFlash = false, damageNoticeTimer;
   let steeringBoost = false, steeringPointer = null;
-  $: paused = flags.some(Boolean);
+  let music, musicMuted = false, musicBlocked = false;
+  let recovering = false;
+  $: paused = recovering || flags.some(Boolean);
   $: me = host ? 0 : 1;
   $: playing = screen === 'game';
   const time = seconds => `${String(Math.floor((seconds || 0) / 60)).padStart(2, '0')}:${String(Math.floor((seconds || 0) % 60)).padStart(2, '0')}`;
 
   onMount(() => {
     let disposed = false;
+    music = new MusicController();
+    musicMuted = music.muted;
     Promise.all([import('$lib/game/Engine.js'), import('$lib/net/PeerSession.js')]).then(([game, net]) => {
       if (disposed) return; Engine = game.Engine; PeerSession = net.PeerSession; initEngine();
     }).catch(e => { error = `Unable to initialize graphics: ${e.message}`; });
     tilt=new TiltInput((value,message)=>{if(message){controlMessage=message;controlMode='drag';}if(value&&playing&&!paused&&controlMode==='tilt'&&engine)engine.touch={x:value.x*sensitivity,z:value.z*sensitivity};});
-    return () => { disposed = true; clearTimeout(damageNoticeTimer); tilt?.disable(); engine?.destroy(); network?.destroy(); };
+    return () => { disposed = true; clearTimeout(damageNoticeTimer); tilt?.disable(); music?.destroy(); engine?.destroy(); network?.destroy(); };
 
   });
+  function tryPlayMusic() {
+    if (!music || musicMuted || recovering || document.hidden) return;
+    void music.play().then(ok => { musicBlocked = !ok && music.blocked; });
+  }
+  function unlockMusic() {
+    if (!music || musicMuted) return;
+    void music.unlock().then(ok => { musicBlocked = !ok && music.blocked; });
+  }
+  function toggleMusic() {
+    if (!music) return;
+    musicMuted = music.toggleMuted();
+    musicBlocked = false;
+    if (!musicMuted && playing && !paused && !hud?.over && !error) tryPlayMusic();
+  }
   function clearDamageFeedback() {
     clearTimeout(damageNoticeTimer);
     damageNotice = '';
@@ -38,23 +57,24 @@
       clearTimeout(damageNoticeTimer);
       damageNoticeTimer = setTimeout(() => { damageNotice = ''; damageFlash = false; }, 1800);
     }
-    if (next?.over) { clearDamageFeedback(); releaseFlightControls(); }
+    if (next?.over) { clearDamageFeedback(); releaseFlightControls(); music?.pause(); }
   }
   function initEngine() {
     try { engine = new Engine(canvas, { onHud: updateHud, onStats: stats => { telemetry = stats; }, onPause: togglePause, onError: fail }); ready = true; }
     catch (e) { ready = false; error = `WebGL could not start. Enable hardware acceleration and reload. ${e.message}`; }
   }
-  function fail(message) { error = message; busy = false; status = ''; replayPending = false; clearDamageFeedback(); if (playing) { flags = [true, true]; engine?.setPaused(true); releaseFlightControls(); } }
+  function fail(message) { error = message; busy = false; status = ''; replayPending = false; clearDamageFeedback(); music?.pause(); if (playing) { flags = [true, true]; engine?.setPaused(true); releaseFlightControls(); } }
   function start(settings = {difficulty, colors:[shipColor,'coral']}) {
     busy = false; screen = 'game'; hud = null; flags = [false, false]; replayPending = false; telemetry = { fps: 0, packetLoss: null }; clearDamageFeedback();
     if (settings.difficulty) difficulty = settings.difficulty;
     if (settings.colors?.[host ? 0 : 1]) shipColor = settings.colors[host ? 0 : 1];
     releaseFlightControls();
-    engine.start({ host, solo, network, settings }); tilt?.calibrate(); if (document.hidden) togglePause(true);
+    engine.start({ host, solo, network, settings }); tryPlayMusic(); tilt?.calibrate(); if (document.hidden) togglePause(true);
   }
   async function connect(create) {
     if (busy || !ready) return;
     error = ''; busy = true; host = create; solo = false; status = create ? 'Opening a frequency…' : 'Finding your wingmate…';
+    unlockMusic();
     network?.destroy();
     const session = new PeerSession({
       room: value => { room = value; screen = 'lobby'; busy = false; status = 'Waiting for a wingmate'; },
@@ -64,7 +84,20 @@
       telemetry: stats => { telemetry = { ...telemetry, packetLoss: stats.packetLoss, rtt: stats.rtt }; },
       replay: settings => start(settings),
       replayRequest: () => { if (hud?.over && host) replayHost(); },
-      pause: value => { flags = value; if(flags.some(Boolean)){ clearDamageFeedback(); releaseFlightControls(); } engine.setPaused(flags.some(Boolean) || Boolean(hud?.over)); },
+      pause: value => {
+        flags = value;
+        const stopped = recovering || flags.some(Boolean) || Boolean(hud?.over) || Boolean(error);
+        if (stopped) { clearDamageFeedback(); releaseFlightControls(); music?.pause(); }
+        else if (playing) tryPlayMusic();
+        engine.setPaused(stopped);
+      },
+      recovery: value => {
+        recovering = value;
+        const stopped = value || flags.some(Boolean) || Boolean(hud?.over) || Boolean(error);
+        engine.setPaused(stopped);
+        if (stopped) { releaseFlightControls(); music?.pause(); }
+        else tryPlayMusic();
+      },
       error: fail, status: value => status=value
     }, {difficulty,colors:[shipColor,'coral']});
     network = session;
@@ -73,15 +106,16 @@
   }
   function practice() { if (!ready || busy || screen !== 'menu') return; network?.destroy(); network=null; solo = true; host = true; error = ''; room = 'SOLO'; start(); }
   function togglePause(force = false) {
-    if (!playing || hud?.over || error) return;
+    if (!playing || hud?.over || error || recovering) return;
     const next = force === true ? true : !flags[me];
     flags = flags.map((v, i) => i === me ? next : v);
     // Freeze immediately on the requesting peer; host acknowledgement reconciles it.
-    engine.setPaused(flags.some(Boolean)); if (flags.some(Boolean)) clearDamageFeedback(); releaseFlightControls();
+    engine.setPaused(flags.some(Boolean)); if (flags.some(Boolean)) { clearDamageFeedback(); music?.pause(); } else tryPlayMusic(); releaseFlightControls();
     if (!solo) network.setPaused(next);
   }
   function menu() {
-    network?.destroy(); network = null; engine?.destroy(); engine = null;
+    recovering = false;
+    network?.destroy(); network = null; engine?.destroy(); engine = null; music?.stop(); musicBlocked = false;
     screen = 'menu'; flags = [false, false]; hud = null; error = ''; busy = false; status = ''; replayPending = false; telemetry = { fps: 0, packetLoss: null }; clearDamageFeedback(); initEngine();
   }
   async function copy() { try { await navigator.clipboard.writeText(room); copied = true; setTimeout(() => copied = false, 1500); } catch { status = 'Select and copy the room code below.'; } }
@@ -141,7 +175,7 @@
 <div class:in-game={playing} class="shell">
   <header>
     <a href="/" class="brand" aria-label="Neon Wing home"><span class="brand-icon">⋈</span> NEON<span>WING</span></a>
-    <div class="header-right"><span class="live-dot"></span> {playing ? `${solo ? 'PRACTICE' : 'P2P LINK'} / ${room}` : 'CO-OP SURVIVAL'} <span class="version">SKYWAY / 05</span></div>
+    <div class="header-right"><button class="music-toggle" class:muted={musicMuted} type="button" aria-pressed={musicMuted} aria-label={musicMuted ? 'Unmute music' : 'Mute music'} onclick={toggleMusic}><span aria-hidden="true">{musicMuted ? '♫̸' : '♫'}</span> {musicMuted ? 'MUSIC OFF' : 'MUSIC ON'}</button><span class="live-dot"></span> {playing ? `${solo ? 'PRACTICE' : 'P2P LINK'} / ${room}` : 'CO-OP SURVIVAL'} <span class="version">SKYWAY / 05</span></div>
   </header>
 
   {#if !playing}
@@ -216,11 +250,13 @@
     {#if paused || hud?.over || error}
       <div class="overlay"><div class="pause-panel" role="dialog" aria-modal="true" aria-label={hud?.over ? 'Run complete' : 'Flight paused'} tabindex="-1" use:focusModal>
         <p class="eyebrow">{error ? 'LINK INTERRUPTED' : hud?.over ? 'END OF TRANSMISSION' : 'FREQUENCY ON HOLD'}</p>
-        <h2>{error ? 'Signal lost.' : hud?.over ? 'Into the afterlight.' : 'Catch your breath.'}</h2>
-        <p>{error || (hud?.over ? 'The city takes this one. Your next run is waiting.' : solo ? 'Your run is paused.' : 'Both ships are paused. Each pilot must clear their own pause to resume.')}</p>
+        <h2>{error ? 'Signal lost.' : recovering ? 'Restoring your route.' : hud?.over ? 'Into the afterlight.' : 'Catch your breath.'}</h2>
+        <p role="status">{error || (recovering ? `${status} Your flight is held while the link recovers.` : hud?.over ? 'The city takes this one. Your next run is waiting.' : solo ? 'Your run is paused.' : 'Both ships are paused. Each pilot must clear their own pause to resume.')}</p>
+        <button class="music-toggle pause-music-toggle" class:muted={musicMuted} type="button" aria-pressed={musicMuted} aria-label={musicMuted ? 'Unmute music' : 'Mute music'} onclick={toggleMusic}><span aria-hidden="true">{musicMuted ? '♫̸' : '♫'}</span> {musicMuted ? 'MUSIC OFF' : 'MUSIC ON'}</button>
+        {#if musicBlocked && !musicMuted}<p class="music-note" role="status">Music playback was blocked. Resume to try again.</p>{/if}
 <div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
         <div class="end-stats"><div><small>SURVIVED</small><strong>{time(hud?.time)}</strong></div><div><small>TEAM SCORE</small><strong>{hud?.score ?? 0}</strong></div></div>
-        {#if !hud?.over && !error}<button class="primary full" onclick={() => togglePause()} disabled={!flags[me]}>{flags[me] ? 'RESUME FLIGHT' : 'WAITING FOR WINGMATE'} <span>→</span></button>{/if}
+        {#if !hud?.over && !error}<button class="primary full" onclick={() => togglePause()} disabled={recovering || !flags[me]}>{recovering ? 'RESTORING LINK…' : flags[me] ? 'RESUME FLIGHT' : 'WAITING FOR WINGMATE'} <span>→</span></button>{/if}
         {#if hud?.over}<button class="primary full" onclick={playAgain} disabled={replayPending || (!solo && !network?.connection?.open)}>{replayPending ? 'WAITING FOR WINGMATE…' : 'PLAY AGAIN'} <span>↻</span></button>{/if}
         <button class="secondary full" onclick={menu}>RETURN TO TERMINAL</button>
       </div></div>

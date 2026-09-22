@@ -18,7 +18,7 @@ test('Play Again clears stale pointer ownership and accepts a new steering finge
     steeringPointer: 7, steeringBoost: true, boostHeld: true, liftHeld: true,
     stick: { x: 1, z: 1 }, paused: false, controlMode: 'drag', sensitivity: 1,
     host: true, solo: true, network: null, tilt: null, document: { hidden: false },
-    clearDamageFeedback() {}
+    clearDamageFeedback() {}, tryPlayMusic() {}
   });
   vm.runInContext(['releaseFlightControls', 'start', 'touchMove', 'releaseSteering'].map(handler).join('\n'), context);
   vm.runInContext('start({})', context);

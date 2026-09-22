@@ -21,10 +21,14 @@ export function createScene(container) {
   // A continuous curved road ribbon, updated with the same coordinate map as combat.
   const vertices=new Float32Array(160*18), roadGeo=new THREE.BufferGeometry(); roadGeo.setAttribute('position',new THREE.BufferAttribute(vertices,3));
   const road=new THREE.Mesh(roadGeo,new THREE.MeshToonMaterial({color:0x769397,side:THREE.DoubleSide}));road.receiveShadow=true;road.frustumCulled=false;scene.add(road);
-  const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(.45, 8, 1),new THREE.MeshToonMaterial({color:0xe3c56f}),320);
+  // Low curb stones keep the route readable at street scale. The previous
+  // tall rails made every turn feel like a tunnel and obscured the facades.
+  const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(.45, .6, 1),new THREE.MeshToonMaterial({color:0xe3c56f}),320);
   rails.castShadow=true;rails.receiveShadow=true;rails.frustumCulled=false;scene.add(rails);
-  const guards=new THREE.InstancedMesh(new THREE.BoxGeometry(.12,24,1),new THREE.MeshBasicMaterial({color:0x19cddd,transparent:true,opacity:.08,depthWrite:false}),320);
+  const guards=new THREE.InstancedMesh(new THREE.BoxGeometry(.1,5,1),new THREE.MeshBasicMaterial({color:0x19cddd,transparent:true,opacity:.06,depthWrite:false}),320);
   guards.frustumCulled=false;scene.add(guards);
+  const laneMarks=new THREE.InstancedMesh(new THREE.BoxGeometry(.14,.05,1.25),new THREE.MeshToonMaterial({color:0xf3e3b9}),320);
+  laneMarks.receiveShadow=true;laneMarks.frustumCulled=false;scene.add(laneMarks);
   const railDummy=new THREE.Object3D();
   const clouds=new THREE.Group();
   for(let i=0;i<22;i++){
@@ -53,11 +57,14 @@ export function createScene(container) {
         const start=worldPosition(side*13.8,0,z,time),end=worldPosition(side*13.8,0,next,time),f=courseFrame(time*FLIGHT_SPEED-(z+next)/2);
         railDummy.position.set((start.x+end.x)/2,(start.y+end.y)/2,(start.z+end.z)/2);
         railDummy.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(f.right.x,f.right.y,f.right.z),new THREE.Vector3(f.up.x,f.up.y,f.up.z),new THREE.Vector3(-f.forward.x,-f.forward.y,-f.forward.z)));
+        railDummy.position.addScaledVector(new THREE.Vector3(f.up.x,f.up.y,f.up.z),-3.65);
         railDummy.scale.z=Math.hypot(end.x-start.x,end.y-start.y,end.z-start.z)+.1;
         railDummy.updateMatrix();rails.setMatrixAt(i*2+j,railDummy.matrix);
-        railDummy.position.addScaledVector(new THREE.Vector3(f.up.x,f.up.y,f.up.z),16);railDummy.updateMatrix();guards.setMatrixAt(i*2+j,railDummy.matrix);
+        railDummy.position.addScaledVector(new THREE.Vector3(f.up.x,f.up.y,f.up.z),5.6);railDummy.updateMatrix();guards.setMatrixAt(i*2+j,railDummy.matrix);
+        const mark=worldPosition(side*5.8,-3.92,(z+next)/2,time);
+        railDummy.position.set(mark.x,mark.y,mark.z);railDummy.scale.set(1,1,1);railDummy.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(f.right.x,f.right.y,f.right.z),new THREE.Vector3(f.up.x,f.up.y,f.up.z),new THREE.Vector3(-f.forward.x,-f.forward.y,-f.forward.z)));railDummy.scale.z=1.6;railDummy.updateMatrix();laneMarks.setMatrixAt(i*2+j,railDummy.matrix);
       }
-    }guards.instanceMatrix.needsUpdate=true;rails.instanceMatrix.needsUpdate=true;roadGeo.attributes.position.needsUpdate=true;roadGeo.computeVertexNormals();
+    }guards.instanceMatrix.needsUpdate=true;rails.instanceMatrix.needsUpdate=true;laneMarks.instanceMatrix.needsUpdate=true;roadGeo.attributes.position.needsUpdate=true;roadGeo.computeVertexNormals();
     }
     const back=portrait?10.5:12;
     desired.set(point.x-frame.forward.x*back+frame.up.x*2.6,point.y-frame.forward.y*back+frame.up.y*2.6,point.z-frame.forward.z*back+frame.up.z*2.6);

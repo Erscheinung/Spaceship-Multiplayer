@@ -35,6 +35,7 @@ export class Simulation {
   constructor({ solo = false, random = Math.random, settings = {} } = {}) {
     this.settings = flightSettings(settings); this.difficulty = DIFFICULTIES[this.settings.difficulty];
     this.random = random; this.nextId = 1; this.spawnClock = 0;
+    this.cleanFlight = [0, 0];
     this.inputs = [{ x: 0, z: 0 }, { x: 0, z: 0 }];
     this.state = { settings: this.settings, time: 0, score: 0, wave: 1, over: false, players: [player(0, true), player(1, !solo)], rocks: [], bullets: [], pickups: [], effects: [], obstacles: cityObstacles(0) };
   }
@@ -54,6 +55,7 @@ export class Simulation {
   tick(dt = STEP) {
     const s = this.state;
     if (s.over) return;
+    const hullBefore = s.players.map(p => p.hp);
     s.time += dt; s.obstacles = cityObstacles(s.time, s.players.filter(p => p.active && p.hp > 0)); s.wave = 1 + Math.floor(s.time / 25);
     this.spawnClock -= dt;
     if (this.spawnClock <= 0) { this.spawnRock(); this.spawnClock = Math.max(0.12, this.difficulty.spawn - s.time * 0.004); }
@@ -127,6 +129,16 @@ export class Simulation {
     s.bullets = s.bullets.filter(b => b.life > 0);
     s.pickups = s.pickups.filter(d => d.life > 0 && nearby(d));
     s.effects = s.effects.filter(e => e.life > 0);
+    for (const p of s.players) {
+      if (!p.active || p.hp <= 0 || p.hp >= 5 || p.hp < hullBefore[p.id] || !this.difficulty.repairSeconds) {
+        this.cleanFlight[p.id] = 0;
+      } else {
+        this.cleanFlight[p.id] += dt;
+        if (this.cleanFlight[p.id] >= this.difficulty.repairSeconds) {
+          p.hp++; this.cleanFlight[p.id] = 0; this.burst(p.x, p.z, 'cyan', p.y);
+        }
+      }
+    }
     s.over = s.players.every(p => !p.active || p.hp <= 0);
   }
   snapshot() { return structuredClone(this.state); }

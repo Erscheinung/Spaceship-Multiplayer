@@ -5,12 +5,15 @@ import { worldPosition, courseFrame, FLIGHT_SPEED, cityObstacles } from './cours
 import { SHIP_COLORS } from './settings.js';
 import { Simulation, STEP, CRUISE_SPEED, advanceFlight } from './simulation.js';
 
+const REMOTE_INTERPOLATION_DELAY = 0.1;
+const REMOTE_MAX_EXTRAPOLATION = 0.2;
+
 export class Engine {
   constructor(container, { onHud, onPause, onError, onStats }) {
     this.world = createScene(container); this.onHud = onHud; this.onPause = onPause; this.onStats = onStats;
     this.objects = new Map(); this.keys = new Set(); this.touch = { x: 0, z: 0 }; this.actions = { boost:false, lift:false }; this.state = null;
     this.mode = 'attract'; this.localId = 0; this.paused = false; this.destroyed = false; this.accumulator = 0; this.snapshotClock = 0; this.hudClock = 0; this.attractTime = 0;
-    this.statsClock = 0; this.statsFrames = 0; this.networkStats = null; this.remoteSnapshots = []; this.presentationOffset = { x: 0, y: 0, z: 0 };
+    this.statsClock = 0; this.statsFrames = 0; this.networkStats = null; this.remoteSnapshots = []; this.remotePresentationTime = 0; this.latestSnapshotArrival = 0; this.latestSnapshotTime = 0; this.presentationOffset = { x: 0, y: 0, z: 0 };
     this.ships = [makeShip(0), makeShip(1)]; this.ships.forEach((s, i) => { s.position.set(i ? 4 : -4, 0, 7); this.world.scene.add(s); });
     this.keydown = e => {
       if (this.mode === 'attract' || /INPUT|TEXTAREA|SELECT/.test(e.target?.tagName)) return;
@@ -34,7 +37,7 @@ export class Engine {
     if (this.sim) this.sim.state.players.forEach(p => { p.boost = CRUISE_SPEED; });
     this.settings = settings; this.applyColors(settings.colors); this.world.resetCamera(); this.state = this.sim?.state ?? null; this.accumulator = 0; this.keys.clear(); this.paused = false;
     this.lastHudTime = null; this.previousPlayers = null; this.snapshotClock = 0; this.hudClock = 0; this.remoteInputTime = performance.now();
-    this.predictedPlayer = null; this.predictionSteps = []; this.remoteSnapshots = []; this.presentationOffset = { x: 0, y: 0, z: 0 }; this.statsClock = 0; this.statsFrames = 0;
+    this.predictedPlayer = null; this.predictionSteps = []; this.remoteSnapshots = []; this.remotePresentationTime = 0; this.latestSnapshotArrival = 0; this.latestSnapshotTime = 0; this.presentationOffset = { x: 0, y: 0, z: 0 }; this.statsClock = 0; this.statsFrames = 0;
     this.inputTimer = setInterval(() => { if (this.mode === 'client') this.network?.send({ type: 'input', input: this.paused ? { x: 0, z: 0 } : this.input() }); }, 1000 / 30);
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.frame);
@@ -46,32 +49,47 @@ export class Engine {
   }
   receiveInput(input) { this.sim?.setInput(1, input); this.remoteInputTime = performance.now(); }
   receiveSnapshot(state) {
-    if (this.mode !== 'client' || !Array.isArray(state.rocks) || !Array.isArray(state.bullets) || !Array.isArray(state.pickups) || !Array.isArray(state.effects)) return;
+    if (this.mode !== 'client' || !Array.isArray(state.players) || !state.players[this.localId] || !Array.isArray(state.rocks) || !Array.isArray(state.bullets) || !Array.isArray(state.pickups) || !Array.isArray(state.effects)) return;
     if (this.state?.settings?.colors?.join() !== state.settings?.colors?.join()) this.applyColors(state.settings?.colors);
     if (this.state && state.time < this.state.time) return;
     const previousPrediction = this.predictedPlayer;
+    const previousTime = this.clientTime ?? state.time;
     const collision = this.state && state.players[this.localId].hp !== this.state.players[this.localId].hp;
     state.obstacles = cityObstacles(state.time, state.players.filter(p => p.active && p.hp > 0));
     this.remoteSnapshots.push({ time: state.time, players: state.players.map(p => ({ ...p })) });
-    this.remoteSnapshots = this.remoteSnapshots.filter(snapshot => snapshot.time >= state.time - .35).slice(-10);
+    this.remoteSnapshots = this.remoteSnapshots.filter(snapshot => snapshot.time >= state.time - .6).slice(-16);
+    this.latestSnapshotTime = state.time;
+    this.latestSnapshotArrival = performance.now() / 1000;
+    if (!this.remotePresentationTime || state.time - this.remotePresentationTime > 1) {
+      this.remotePresentationTime = Math.max(0, state.time - REMOTE_INTERPOLATION_DELAY);
+      this.remoteFrameTime = this.latestSnapshotArrival;
+    }
     this.state = state;
     if (state.over || !this.lastHudTime || state.time - this.lastHudTime >= .1) { this.onHud(state); this.lastHudTime = state.time; }
     this.predictedPlayer = { ...state.players[this.localId] };
     this.predictionSteps = collision ? [] : (this.predictionSteps ?? []).filter(step => step.time > state.time);
     for (const step of this.predictionSteps) if (this.predictedPlayer.hp > 0) advanceFlight(this.predictedPlayer, step.input, Math.min(step.dt, step.time-state.time), step.time);
+    this.clientTime = Math.max(state.time, this.predictionSteps.at(-1)?.time ?? state.time);
     if (collision) this.presentationOffset = { x: 0, y: 0, z: 0 };
     else if (previousPrediction) {
       this.presentationOffset.x = Math.max(-2, Math.min(2, this.presentationOffset.x + previousPrediction.x - this.predictedPlayer.x));
       this.presentationOffset.y = Math.max(-2, Math.min(2, this.presentationOffset.y + previousPrediction.y - this.predictedPlayer.y));
-      this.presentationOffset.z = Math.max(-2, Math.min(2, this.presentationOffset.z + previousPrediction.z - this.predictedPlayer.z));
+      // Positions are route-relative. A clock correction also moves the route
+      // under the ship, so preserve its world distance across reconciliation.
+      this.presentationOffset.z = Math.max(-8, Math.min(8, this.presentationOffset.z + previousPrediction.z - this.predictedPlayer.z + (this.clientTime - previousTime) * FLIGHT_SPEED));
     }
-    this.clientTime = Math.max(state.time, this.predictionSteps.at(-1)?.time ?? state.time);
     if (state.over) { this.draw(1 / 60); this.world.render(state.time, state.players[this.localId]); this.setPaused(true); }
   }
   setPaused(paused) {
     if (this.destroyed || this.paused === paused) return;
     this.predictionSteps = [];
     if (this.mode === 'client' && this.state) { this.clientTime=this.state.time;this.predictedPlayer={...this.state.players[this.localId]}; }
+    if (this.mode === 'client') {
+      this.remoteFrameTime = performance.now() / 1000;
+      this.latestSnapshotArrival = this.remoteFrameTime;
+      this.remotePresentationTime = this.state?.time ?? 0;
+      this.presentationOffset = { x: 0, y: 0, z: 0 };
+    }
     this.paused = paused; this.keys.clear(); this.touch = { x: 0, z: 0 }; this.actions = { boost:false, lift:false }; this.accumulator = 0;
     this.sim?.setInput(0, { x: 0, z: 0 }); this.sim?.setInput(1, { x: 0, z: 0 });
     if (paused) cancelAnimationFrame(this.raf);
@@ -84,7 +102,8 @@ export class Engine {
     const dt = Math.min((now - this.last) / 1000, 0.1); this.last = now;
     if (this.mode === 'host') {
       this.accumulator += dt; this.sim.setInput(0, this.input());
-      if (now - (this.remoteInputTime ?? 0) > 300) this.sim.setInput(1, { x: 0, z: 0, cruise: true });
+      const inputGrace = Math.min(1000, Math.max(300, (this.network?.rtt ?? 100) * 2));
+      if (now - (this.remoteInputTime ?? 0) > inputGrace) this.sim.setInput(1, { x: 0, z: 0, cruise: true });
       while (this.accumulator >= STEP) { this.previousPlayers = this.sim.state.players.map(p => ({ ...p })); this.sim.tick(); this.accumulator -= STEP; }
       this.state = this.sim.state; this.snapshotClock += dt; this.hudClock += dt;
       if (this.snapshotClock >= 0.05 || this.state.over) { const { obstacles, ...snapshot } = this.sim.snapshot(); this.network?.send({ type: 'snapshot', state: snapshot }); this.snapshotClock = 0; }
@@ -109,19 +128,36 @@ export class Engine {
     if (this.mode === 'client') {
       const smoothing = Math.exp(-dt * 18);
       this.presentationOffset.x *= smoothing; this.presentationOffset.y *= smoothing; this.presentationOffset.z *= smoothing;
+      this.advanceRemotePresentation(now);
     }
     this.draw(dt); this.world.render(this.renderTime(), this.renderPlayer(), dt, this.state?.settings?.difficulty === 'brutal');
     if (this.state?.over) { this.setPaused(true); return; }
     this.raf = requestAnimationFrame(this.frame);
   }
   renderTime() { return this.mode === 'client' && this.state ? this.clientTime ?? this.state.time : this.mode === 'host' && this.state ? Math.max(0, this.state.time - STEP + this.accumulator) : this.attractTime; }
+  advanceRemotePresentation(now) {
+    if (this.mode !== 'client' || !this.latestSnapshotTime || !this.latestSnapshotArrival) return;
+    const age = Math.max(0, now / 1000 - this.latestSnapshotArrival);
+    const desired = this.latestSnapshotTime - REMOTE_INTERPOLATION_DELAY + Math.min(age, REMOTE_INTERPOLATION_DELAY + REMOTE_MAX_EXTRAPOLATION);
+    const upper = this.latestSnapshotTime + REMOTE_MAX_EXTRAPOLATION;
+    const elapsed = Math.min(.1, Math.max(0, now / 1000 - (this.remoteFrameTime ?? now / 1000)));
+    this.remoteFrameTime = now / 1000;
+    // Adjust playback speed gently; packet arrival must not directly move the
+    // presentation clock forward by a whole snapshot or a burst of snapshots.
+    const rate = Math.max(.8, Math.min(1.2, 1 + (desired - this.remotePresentationTime) * 2));
+    this.remotePresentationTime = Math.max(this.remotePresentationTime, Math.min(upper, this.remotePresentationTime + elapsed * rate));
+  }
   remotePlayer(id) {
     if (this.mode !== 'client' || id === this.localId || this.remoteSnapshots.length === 0) return this.state?.players[id];
     // Keep a small authoritative presentation buffer for the wingmate. Local
     // input remains predicted immediately; only the remote pilot is delayed a
     // fraction of a snapshot so packet jitter does not read as rubber-banding.
-    const target = Math.min(this.state.time, this.renderTime() - .1);
+    // Keep a presentation clock behind the newest authoritative state. It
+    // advances from wall time during a short packet gap, then extrapolates
+    // only a bounded distance instead of jumping to each late snapshot.
+    const fallbackTarget = Math.min(this.state.time, this.renderTime() - REMOTE_INTERPOLATION_DELAY);
     const snapshots = this.remoteSnapshots;
+    const target = Math.max(snapshots[0].time, Math.min(snapshots.at(-1).time + REMOTE_MAX_EXTRAPOLATION, this.remotePresentationTime > 0 ? this.remotePresentationTime : fallbackTarget));
     let before = snapshots[0], after = snapshots.at(-1);
     for (let i = 0; i < snapshots.length; i++) {
       if (snapshots[i].time <= target) before = snapshots[i];
@@ -132,7 +168,16 @@ export class Engine {
     const span = after.time - before.time;
     const t = span > 0 ? Math.max(0, Math.min(1, (target - before.time) / span)) : 1;
     const lerp = (key, fallback = 0) => (a[key] ?? fallback) + ((b[key] ?? fallback) - (a[key] ?? fallback)) * t;
-    return { ...b, x: lerp('x'), z: lerp('z') + (this.renderTime() - target) * FLIGHT_SPEED, y: lerp('y'), vx: lerp('vx'), vy: lerp('vy'), boost: lerp('boost') };
+    const result = { ...b, x: lerp('x'), z: lerp('z'), y: lerp('y'), vx: lerp('vx'), vy: lerp('vy'), boost: lerp('boost') };
+    const extrapolated = Math.max(0, target - after.time);
+    result.x += result.vx * extrapolated;
+    result.y += result.vy * extrapolated;
+    result.z -= result.boost * extrapolated;
+    // The world is rendered at the local prediction clock. Compensate for
+    // that route-frame difference while retaining the remote pilot's own
+    // authoritative motion above.
+    result.z += (this.renderTime() - target) * FLIGHT_SPEED;
+    return result;
   }
   hostPlayer(id) {
     const b = this.state?.players[id], a = this.previousPlayers?.[id];
