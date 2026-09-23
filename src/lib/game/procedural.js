@@ -292,18 +292,45 @@ function makeDistrict(index) {
   return bake(g);
 }
 
+// A single set of window quads is reused across the entire outer city. The
+// silhouettes, colors, setbacks, roof equipment and aerials vary per cell.
+function skylineWindows() {
+  const positions = [], indices = [];
+  const quad = (a, b, c, d) => {
+    const i = positions.length / 3;
+    positions.push(...a, ...b, ...c, ...d);
+    indices.push(i, i + 1, i + 2, i, i + 2, i + 3);
+  };
+  for (let floor = 0; floor < 5; floor++) {
+    const y = -.32 + floor * .15, top = y + .075;
+    for (const x of [-.23, .23]) for (const z of [-.506, .506])
+      quad([x - .09, y, z], [x + .09, y, z], [x + .09, top, z], [x - .09, top, z]);
+    for (const z of [-.23, .23]) for (const x of [-.506, .506])
+      quad([x, y, z - .07], [x, y, z + .07], [x, top, z + .07], [x, top, z - .07]);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export function makeSkyline(scene) {
   const blocks = Array.from({ length: 18 }, (_, i) => { const g = makeDistrict(i); scene.add(g); return g; });
   const basis = new THREE.Matrix4();
   let previousBlock = null, previousCell = '';
   // World-aligned outer districts fill the view during banks and hairpins.
-  // Instancing keeps almost a thousand distant buildings to three draw calls.
+  // Instancing keeps almost a thousand distant buildings to a few draw calls.
   const count = 31 * 31;
   const buildings = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count);
   const roofs = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0x536f72), count);
   const bands = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xbfd2c9), count * 3);
-  buildings.frustumCulled = roofs.frustumCulled = bands.frustumCulled = false;
-  scene.add(buildings, roofs, bands);
+  const windows = new THREE.InstancedMesh(skylineWindows(), new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide}), count);
+  const setbacks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count);
+  const roofRooms = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count);
+  const aerials = new THREE.InstancedMesh(new THREE.CylinderGeometry(.05,.08,1,5), toon(0x344c52), count);
+  for (const mesh of [buildings, roofs, bands, windows, setbacks, roofRooms, aerials]) mesh.frustumCulled = false;
+  scene.add(buildings, roofs, bands, windows, setbacks, roofRooms, aerials);
   const dummy = new THREE.Object3D(), color = new THREE.Color();
   const hash = (x, z) => { const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return n - Math.floor(n); };
   return (time, viewZ = 0) => {
@@ -327,18 +354,35 @@ export function makeSkyline(scene) {
     for (let x = cx - 15; x <= cx + 15; x++) for (let z = cz - 15; z <= cz + 15; z++) {
       const n = hash(x, z), px = x * 22, pz = z * 22;
       const clear = route.every(p => Math.hypot(p.x - px, p.z - pz) > 42);
-      const height = 18 + n * 43, width = 12 + hash(z, x + 8) * 6;
-      dummy.position.set(px, -8 + height / 2, pz); dummy.scale.set(clear ? width : 0, clear ? height : 0, clear ? 12 + n * 6 : 0); dummy.updateMatrix(); buildings.setMatrixAt(i, dummy.matrix);
+      const profile = hash(x + 13, z - 5), detail = hash(x - 7, z + 19);
+      const height = 18 + n * 43, width = 12 + hash(z, x + 8) * 6, depth = 12 + n * 6;
+      dummy.position.set(px, -8 + height / 2, pz); dummy.scale.set(clear ? width : 0, clear ? height : 0, clear ? depth : 0); dummy.updateMatrix(); buildings.setMatrixAt(i, dummy.matrix);
       buildings.setColorAt(i, color.setHex(palette[Math.floor(n * palette.length)]));
-      dummy.position.y = -8 + height; dummy.scale.set(clear ? width + .8 : 0, clear ? .8 : 0, clear ? 12.8 + n * 6 : 0); dummy.updateMatrix(); roofs.setMatrixAt(i, dummy.matrix);
+      windows.setMatrixAt(i, dummy.matrix);
+      windows.setColorAt(i, color.setHex(detail > .72 ? 0x806b62 : detail > .35 ? 0x536e70 : 0x39545e));
+      dummy.position.y = -8 + height; dummy.scale.set(clear ? width + .8 : 0, clear ? .8 : 0, clear ? depth + .8 : 0); dummy.updateMatrix(); roofs.setMatrixAt(i, dummy.matrix);
       for (let floor = 0; floor < 3; floor++) {
         dummy.position.y = -8 + height * (.3 + floor * .22);
-        dummy.scale.set(clear ? width + .12 : 0, clear ? .65 : 0, clear ? 12.12 + n * 6 : 0);
+        dummy.scale.set(clear ? width + .12 : 0, clear ? .65 : 0, clear ? depth + .12 : 0);
         dummy.updateMatrix(); bands.setMatrixAt(i * 3 + floor, dummy.matrix);
       }
+      const setbackHeight = profile > .45 ? 3 + profile * 8 : 0;
+      dummy.position.set(px + (detail - .5) * 2, -8 + height + setbackHeight / 2, pz + (profile - .5) * 2);
+      dummy.scale.set(clear && setbackHeight ? width * (.44 + detail * .25) : 0, clear ? setbackHeight : 0, clear ? depth * .54 : 0);
+      dummy.updateMatrix(); setbacks.setMatrixAt(i, dummy.matrix);
+      setbacks.setColorAt(i, color.setHex(palette[Math.floor(profile * palette.length)]));
+      const roomHeight = 1.5 + detail * 2.5;
+      dummy.position.set(px - width * .2, -8 + height + roomHeight / 2, pz + depth * .18);
+      dummy.scale.set(clear ? width * .23 : 0, clear ? roomHeight : 0, clear ? depth * .21 : 0);
+      dummy.updateMatrix(); roofRooms.setMatrixAt(i, dummy.matrix);
+      roofRooms.setColorAt(i, color.setHex(detail > .5 ? 0x718e91 : 0xc8c8b6));
+      dummy.position.set(px + width * .27, -8 + height + 2 + profile * 3, pz - depth * .25);
+      dummy.scale.set(clear && detail > .22 ? 1 : 0, clear ? 4 + profile * 6 : 0, 1);
+      dummy.updateMatrix(); aerials.setMatrixAt(i, dummy.matrix);
       i++;
     }
-    buildings.instanceMatrix.needsUpdate = roofs.instanceMatrix.needsUpdate = bands.instanceMatrix.needsUpdate = true; buildings.instanceColor.needsUpdate = true;
+    for (const mesh of [buildings, roofs, bands, windows, setbacks, roofRooms, aerials]) mesh.instanceMatrix.needsUpdate = true;
+    for (const mesh of [buildings, windows, setbacks, roofRooms]) mesh.instanceColor.needsUpdate = true;
   };
 }
 

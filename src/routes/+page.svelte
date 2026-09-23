@@ -121,7 +121,7 @@
   async function copy() { try { await navigator.clipboard.writeText(room); copied = true; setTimeout(() => copied = false, 1500); } catch { status = 'Select and copy the room code below.'; } }
   async function changeControls(value) {
     controlMessage='';releaseFlightControls();tilt?.disable();controlMode=value;
-    if(value==='tilt')try{await tilt.enable();controlMessage='Hold comfortably, then tilt to steer. Recalibrate after rotating.';}catch(e){controlMode='drag';controlMessage=e.message;}
+    if(value==='tilt')try{await tilt.enable();controlMessage='Tilt to steer; hold CLIMB to rise. Recalibrate after rotating.';}catch(e){controlMode='drag';controlMessage=e.message;}
   }
   function releaseFlightControls(){steeringPointer=null;boostHeld=false;liftHeld=false;steeringBoost=false;stick={x:0,z:0};if(engine){engine.touch={x:0,z:0};engine.actions={boost:false,lift:false};}}
   function holdAction(e,action){if(paused)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);engine.actions[action]=true;if(action==='lift')liftHeld=true;}
@@ -243,7 +243,7 @@
     <div class="game-hint">BANK THROUGH THE SKYWAY <span>◇</span> COLLECT UPGRADE CORES <span>◇</span> {hud?.settings?.difficulty==='brutal' ? 'ALIGN YOUR SHOTS' : 'WEAPONS AUTO-FIRE'}</div>
     {#if !paused && !hud?.over && !error}<div class="touch-controls">
       {#if controlMode==='drag'}<button aria-label="Drag to steer" class:boost-active={steeringBoost} class="touch-pad" onpointerdown={touchMove} onpointermove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))touchMove(e);}} onpointerup={releaseSteering} onpointercancel={releaseSteering} onlostpointercapture={releaseSteering}><span class="touch-stick" style:transform={`translate(${stick.x*28}px,${stick.z*28}px)`}>✥</span><span class="touch-boost-badge" aria-live="polite">{steeringBoost ? 'BOOST' : ''}</span></button>{:else}<button class="calibrate" onclick={()=>tilt.calibrate()}>◎<br/>CALIBRATE TILT</button>{/if}
-      <span class="touch-label">{controlMode==='drag'?(steeringBoost?'OUTER BOOST ACTIVE':'DRAG TO STEER · PULL OUT TO BOOST'):'TILT TO STEER'}</span>
+      <span class="touch-label">{controlMode==='drag'?(steeringBoost?'OUTER BOOST ACTIVE':'DRAG TO STEER · PULL OUT TO BOOST'):'TILT TO STEER · HOLD CLIMB TO RISE'}</span>
     </div><div class="flight-actions">
       <button aria-label="Hold to climb" class:held={liftHeld} onpointerdown={e=>holdAction(e,'lift')} onpointerup={()=>releaseAction('lift')} onpointercancel={()=>releaseAction('lift')} onlostpointercapture={()=>releaseAction('lift')}>↑<small>CLIMB</small></button>
     </div>{/if}
