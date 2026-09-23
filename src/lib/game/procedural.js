@@ -6,7 +6,7 @@ export const COLORS = { cyan: 0x19cddd, magenta: 0xef657b, orange: 0xffa342 };
 const INK = 0x293c49;
 // The city uses a dusty plaster palette so the cyan sky and ship lights carry
 // the visual focus. Every shape below is original procedural geometry.
-export const palette = [0xf1e6cf, 0xd8d1b9, 0x9db8aa, 0xc9a889, 0xb8c9bb, 0xd7b86b, 0xa7b6c1];
+export const palette = [0xf1e6cf, 0xd8d1b9, 0x9db8aa, 0xc9a889, 0xb8c9bb, 0xd7b86b, 0xa7b6c1, 0xd8a6a1, 0xb4abc7, 0xe3c49f, 0x91b7bb, 0xc4ce99, 0xc99379, 0xa5b5ce];
 const accents = [0x3f6870, 0x4a7d78, 0xd78369, 0xdfa83e, 0x7295a0, 0xb35960];
 const districtNames = ['old-town', 'market', 'terrace', 'highline', 'canal', 'garden'];
 
@@ -141,6 +141,46 @@ export function makePickup(type) {
   group.add(ring); return group;
 }
 
+// Original travel-poster illustrations and flight sayings, drawn once per tower.
+const posterSayings = [
+  ['SEE YOU SPACE COWBOY', 'COWBOY BEBOP'], ['LIVE LONG AND PROSPER', 'STAR TREK'],
+  ['STAY ON TARGET', 'STAR WARS'], ['NEXT STOP: THE STARS', 'SKYWAY TRAVEL BUREAU'],
+  ['TAKE THE SCENIC ORBIT', 'AFTERLIGHT EXPRESS'], ['A LITTLE LOST, STILL FLYING', 'PILOT NOTES'],
+  ['HOME IS A DISTANT BLUE DOT', 'DEEP SPACE POST'], ['SAVE A SEAT FOR THE MOON', 'LUNAR LOCAL'],
+  ['LET THE COMETS GO FIRST', 'FLIGHT SCHOOL'], ['EVERY SUNSET HAS A DEPARTURE', 'ORBITAL TRANSIT'],
+  ['GOOD COFFEE. LONG ORBITS.', 'STATION CAFE'], ['FOLLOW THE QUIET STARS', 'NIGHT FLIGHT'],
+  ['THE SKY HAS ROOM FOR YOU', 'CITY AIRWAYS'], ['MEET ME PAST NEPTUNE', 'OUTER PLANETS LINE'],
+  ['SMALL SHIP. WIDE UNIVERSE.', 'INDEPENDENT PILOTS'], ['KEEP A WINDOW TO THE STARS', 'CABIN JOURNAL'],
+  ['POSTCARDS FROM TOMORROW', 'MARS MAIL'], ['SLOW DOWN FOR SATURN', 'RING ROAD'],
+  ['ANOTHER DAWN, ANOTHER WORLD', 'EXPLORER CLUB'], ['CARRY KINDNESS AS CARGO', 'FREIGHT UNION'],
+  ['WE TOOK THE LONG WAY HOME', 'VOYAGER LOG'], ['MOONLIGHT IS FREE', 'LUNAR GARDENS'],
+  ['MAKE TIME FOR THE VIEW', 'SKYWAY OBSERVATORY'], ['YOUR ORBIT WILL FIND YOU', 'STATION RADIO']
+];
+function makePoster(index, width, height) {
+  const canvas = document.createElement('canvas'); canvas.width = 384; canvas.height = 512;
+  const c = canvas.getContext('2d');
+  const colors = ['#da947e', '#819ea9', '#a8b48a', '#b5a2bd', '#d5b66e', '#75aaa2'];
+  c.fillStyle = '#eee3c9'; c.fillRect(0, 0, 384, 512);
+  c.fillStyle = colors[index % colors.length]; c.fillRect(16, 16, 352, 340);
+  c.fillStyle = '#f5d991'; c.beginPath(); c.arc(250 - index % 3 * 53, 110, 62, 0, Math.PI * 2); c.fill();
+  // Flat cut-paper mountains, planetary rings and a tiny outbound craft.
+  for (let layer = 0; layer < 3; layer++) {
+    c.fillStyle = ['#a6bdb0', '#628e91', '#355663'][layer]; c.beginPath(); c.moveTo(16, 356);
+    for (let x = 16; x <= 368; x += 44) c.lineTo(x, 205 + layer * 40 + Math.sin(x * .02 + index + layer) * 32);
+    c.lineTo(368, 356); c.closePath(); c.fill();
+  }
+  c.strokeStyle = '#f5e7c6'; c.lineWidth = 7; c.beginPath(); c.ellipse(190, 161, 132, 25, -.45, 0, Math.PI * 2); c.stroke();
+  c.fillStyle = '#f5e7c6'; c.beginPath(); c.moveTo(96, 177); c.lineTo(148, 146); c.lineTo(127, 185); c.lineTo(118, 172); c.closePath(); c.fill();
+  const [quote, credit] = posterSayings[index % posterSayings.length];
+  c.fillStyle = '#293c49'; c.textAlign = 'center'; c.font = 'bold 25px sans-serif';
+  const lines = []; let line = '';
+  for (const word of quote.split(' ')) { const next = line ? line + ' ' + word : word; if (c.measureText(next).width > 330) { lines.push(line); line = word; } else line = next; } lines.push(line);
+  lines.forEach((text, i) => c.fillText(text, 192, 391 + i * 29));
+  c.font = '13px sans-serif'; c.fillText(credit, 192, 486);
+  const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.Mesh(new THREE.PlaneGeometry(width, height), new THREE.MeshBasicMaterial({ map }));
+}
+
 export function makeTower(b) {
   const g = new THREE.Group();
   if (b.kind === 'gate') {
@@ -164,7 +204,13 @@ export function makeTower(b) {
   for (let y = -1; y < b.height - 5; y += 2.6) for (const off of [-1.9, 0, 1.9]) window(g, side, side * (b.width / 2), y, off, 0x365764, 1.05, 1.4);
   box(g, side * .04, -2.8, b.depth / 2 + .08, 1.8, 2.3, .16, 0x335160);
   box(g, 0, -3.65, 0, b.width + 1, .3, b.depth + 1, 0xf2c35d);
-  return bake(g);
+  const result = bake(g);
+  for (const facing of [-1, 1]) {
+    const art = makePoster(Math.abs(Math.floor(b.id / 10)) + (facing < 0 ? 7 : 0), b.width * .78, Math.min(b.height - 3.5, b.width * 1.12));
+    art.position.set(0, b.height / 2 - 3, facing * (b.depth / 2 + .11));
+    art.rotation.y = facing < 0 ? Math.PI : 0; result.add(art);
+  }
+  return result;
 }
 
 function addCable(group, z, y, sag = 0) {
@@ -191,6 +237,14 @@ function makeDistrict(index) {
     const h = 10 + (index * 7 + (side + 1) * 3) % 13;
     box(g, x, h / 2 - 4, (index % 2 - .5) * 8, w, h, 25, palette[(index + (side > 0 ? 1 : 0)) % palette.length], true);
     box(g, x, h - 3.65, (index % 2 - .5) * 8, w + .6, .52, 25.5, 0x536f72);
+    // End facades remain visible through turns and from above.
+    for (const end of [-1, 1]) {
+      const z = (index % 2 - .5) * 8 + end * 12.56;
+      for (let y = 0; y < h - 5; y += 3) for (const col of [-1, 0, 1]) {
+        box(g, x + col * w * .27, y, z, w * .15, 1.4, .1, accents[(index + col + 7) % accents.length]);
+      }
+      box(g, x, h * .55 - 4, z, w, .35 + index % 3 * .2, .14, accents[(index + 3) % accents.length]);
+    }
     const front = x - side * (w / 2 + .04);
     // Storefronts and patterned upper windows create a navigable close wall.
     for (let floor = 0; floor < Math.floor((h - 3) / 2.8); floor++) {
@@ -239,24 +293,59 @@ function makeDistrict(index) {
 }
 
 export function makeSkyline(scene) {
-  const blocks = Array.from({ length: 12 }, (_, i) => { const g = makeDistrict(i); scene.add(g); return g; });
-  const span = blocks.length * 36;
-  return (time, viewZ = 0) => blocks.forEach((g, i) => {
-    const z = (((i * 36 + time * FLIGHT_SPEED - viewZ + 96) % span + span) % span) - span + viewZ;
-    const f = courseFrame(time * FLIGHT_SPEED - z), p = worldPosition(0, 0, z, time);
-    g.position.set(p.x, p.y, p.z);
-    g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
-      new THREE.Vector3(f.right.x, f.right.y, f.right.z),
-      new THREE.Vector3(f.up.x, f.up.y, f.up.z),
-      new THREE.Vector3(-f.forward.x, -f.forward.y, -f.forward.z)
-    ));
-  });
+  const blocks = Array.from({ length: 18 }, (_, i) => { const g = makeDistrict(i); scene.add(g); return g; });
+  const basis = new THREE.Matrix4();
+  let previousBlock = null, previousCell = '';
+  // World-aligned outer districts fill the view during banks and hairpins.
+  // Instancing keeps almost a thousand distant buildings to three draw calls.
+  const count = 31 * 31;
+  const buildings = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count);
+  const roofs = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0x536f72), count);
+  const bands = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xbfd2c9), count * 3);
+  buildings.frustumCulled = roofs.frustumCulled = bands.frustumCulled = false;
+  scene.add(buildings, roofs, bands);
+  const dummy = new THREE.Object3D(), color = new THREE.Color();
+  const hash = (x, z) => { const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return n - Math.floor(n); };
+  return (time, viewZ = 0) => {
+    const distance = time * FLIGHT_SPEED - viewZ, block = Math.floor(distance / 36);
+    if (block !== previousBlock) {
+      previousBlock = block;
+      blocks.forEach((g, i) => {
+        const section = block - 4 + ((i - (block - 4) % blocks.length + blocks.length) % blocks.length);
+        const f = courseFrame(section * 36);
+        g.position.set(f.x, f.y, f.z);
+        g.quaternion.setFromRotationMatrix(basis.makeBasis(
+          new THREE.Vector3(f.right.x, f.right.y, f.right.z), new THREE.Vector3(f.up.x, f.up.y, f.up.z), new THREE.Vector3(-f.forward.x, -f.forward.y, -f.forward.z)));
+      });
+    }
+    const f = courseFrame(distance), cx = Math.floor(f.x / 22), cz = Math.floor(f.z / 22), cell = `${cx}:${cz}:${Math.floor(distance / 140)}`;
+    if (cell === previousCell) return;
+    previousCell = cell;
+    const route = [];
+    for (let d = distance - 900; d <= distance + 900; d += 12) route.push(courseFrame(d));
+    let i = 0;
+    for (let x = cx - 15; x <= cx + 15; x++) for (let z = cz - 15; z <= cz + 15; z++) {
+      const n = hash(x, z), px = x * 22, pz = z * 22;
+      const clear = route.every(p => Math.hypot(p.x - px, p.z - pz) > 42);
+      const height = 18 + n * 43, width = 12 + hash(z, x + 8) * 6;
+      dummy.position.set(px, -8 + height / 2, pz); dummy.scale.set(clear ? width : 0, clear ? height : 0, clear ? 12 + n * 6 : 0); dummy.updateMatrix(); buildings.setMatrixAt(i, dummy.matrix);
+      buildings.setColorAt(i, color.setHex(palette[Math.floor(n * palette.length)]));
+      dummy.position.y = -8 + height; dummy.scale.set(clear ? width + .8 : 0, clear ? .8 : 0, clear ? 12.8 + n * 6 : 0); dummy.updateMatrix(); roofs.setMatrixAt(i, dummy.matrix);
+      for (let floor = 0; floor < 3; floor++) {
+        dummy.position.y = -8 + height * (.3 + floor * .22);
+        dummy.scale.set(clear ? width + .12 : 0, clear ? .65 : 0, clear ? 12.12 + n * 6 : 0);
+        dummy.updateMatrix(); bands.setMatrixAt(i * 3 + floor, dummy.matrix);
+      }
+      i++;
+    }
+    buildings.instanceMatrix.needsUpdate = roofs.instanceMatrix.needsUpdate = bands.instanceMatrix.needsUpdate = true; buildings.instanceColor.needsUpdate = true;
+  };
 }
 
 export function disposeObject(object) {
   object.traverse(child => {
     child.geometry?.dispose();
-    if (child.material) for (const m of Array.isArray(child.material) ? child.material : [child.material]) m.dispose();
+    if (child.material) for (const m of Array.isArray(child.material) ? child.material : [child.material]) { m.map?.dispose(); m.dispose(); }
   });
   object.removeFromParent();
 }

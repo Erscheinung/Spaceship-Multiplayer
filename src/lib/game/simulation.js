@@ -33,6 +33,7 @@ export function advanceFlight(p, input, dt, time) {
 // This module has no browser dependencies. Only the host advances it.
 export class Simulation {
   constructor({ solo = false, random = Math.random, settings = {} } = {}) {
+    this.solo = solo;
     this.settings = flightSettings(settings); this.difficulty = DIFFICULTIES[this.settings.difficulty];
     this.random = random; this.nextId = 1; this.spawnClock = 0;
     this.cleanFlight = [0, 0];
@@ -64,7 +65,7 @@ export class Simulation {
       const input = this.inputs[p.id];
       const boundary = advanceFlight(p, input, dt, s.time);
       if (boundary && p.invulnerable <= 0) {
-        p.hp = Math.max(0, p.hp - this.difficulty.damage); p.invulnerable = 1.5;
+        p.hp = this.solo ? 5 : Math.max(0, p.hp - this.difficulty.damage); p.invulnerable = 1.5;
         this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y);
       }
       p.invulnerable = Math.max(0, p.invulnerable - dt); p.cooldown -= dt;
@@ -100,12 +101,12 @@ export class Simulation {
       if (!p.active || p.hp <= 0) continue;
       for (const r of s.rocks) {
         if (r.hp > 0 && p.invulnerable <= 0 && distance(p, r) < r.r + 0.65) {
-          p.hp = Math.max(0, p.hp - this.difficulty.damage); p.invulnerable = 1.5; r.hp = 0; this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y);
+          p.hp = this.solo ? 5 : Math.max(0, p.hp - this.difficulty.damage); p.invulnerable = 1.5; r.hp = 0; this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y);
         }
       }
       for (const building of s.obstacles) {
         if (hitsBuilding(p, building)) {
-          if (p.invulnerable <= 0) { p.hp = Math.max(0, p.hp - this.difficulty.damage); p.invulnerable = 1.5; this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y); }
+          if (p.invulnerable <= 0) { p.hp = this.solo ? 5 : Math.max(0, p.hp - this.difficulty.damage); p.invulnerable = 1.5; this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y); }
           p.boost *= .4;
           if (building.kind === 'gate') {
             p.y = clamp(building.y + (p.y < building.y ? -1 : 1) * (building.height / 2 + .8), 0, 28); p.vy = 0;

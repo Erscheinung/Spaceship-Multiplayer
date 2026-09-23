@@ -28,8 +28,8 @@ test('upgrades are picked up once, affect fire rate/spread and respect caps', ()
   sim.state.rocks.push({ id: 10, x: 0, z: -10, r: 1, hp: 100, speed: 0 });
   sim.state.players[1].cooldown = 10; sim.tick(); assert.equal(sim.state.bullets.length, 5); assert.ok(p.cooldown < 0.15);
 });
-test('damage grants invulnerability, solo ends when pilot dies, final state is frozen', () => {
-  const sim = new Simulation({ solo: true }); sim.spawnClock = Infinity; const p = sim.state.players[0]; p.invulnerable = 0; p.hp = 2; p.cooldown = 10;
+test('damage grants invulnerability, co-op ends when last pilot dies, final state is frozen', () => {
+  const sim = new Simulation(); sim.state.players[1].hp = 0; sim.spawnClock = Infinity; const p = sim.state.players[0]; p.invulnerable = 0; p.hp = 2; p.cooldown = 10;
   const rock = id => ({ id, x: p.x, z: p.z, r: 1, hp: 2, speed: 0 });
   sim.state.rocks = [rock(1), rock(2)]; sim.tick(); assert.equal(p.hp, 1); assert.equal(sim.state.over, false);
   sim.tick(); assert.equal(p.hp, 1); p.invulnerable = 0; sim.tick(); assert.equal(sim.state.over, true);
@@ -54,7 +54,7 @@ test('long run stays bounded and finite', () => {
 });
 
 test('city towers damage and push pilots clear, with invulnerability preventing repeated hits', () => {
-  const sim = new Simulation({ solo: true }); sim.spawnClock = Infinity;
+  const sim = new Simulation(); sim.spawnClock = Infinity;
   // First tower reaches the pilot after a full, visible approach.
   sim.state.time = 76 / 14 - STEP;
   const p = sim.state.players[0]; p.x = 0; p.z = 8; p.invulnerable = 0;
@@ -134,4 +134,20 @@ test('long boosted brutal run stays finite and bounded with independent pilot po
   // bounded, so the union remains below the deterministic 48-entry cap.
   assert.ok(sim.state.obstacles.length<=48);assert.ok(sim.state.rocks.length<=60);assert.ok(sim.state.bullets.length<200);
   assert.ok(sim.state.players.every(p=>Number.isFinite(p.z)&&p.y<=28));
+});
+
+
+test('solo hull stays unlimited through repeated rocks, boundaries and towers in every difficulty', () => {
+  for (const difficulty of ['scenic', 'normal', 'brutal']) {
+    const sim = new Simulation({ solo: true, settings: { difficulty } }); sim.spawnClock = Infinity;
+    const p = sim.state.players[0];
+    for (let hit = 0; hit < 12; hit++) {
+      p.invulnerable = 0; p.cooldown = 10;
+      sim.state.rocks = [{ id: hit, x: p.x, y: p.y, z: p.z, r: 2, hp: 2, speed: 0 }];
+      sim.tick(); assert.equal(p.hp, 5); assert.equal(sim.state.over, false);
+    }
+    p.x = 20; p.invulnerable = 0; sim.tick(); assert.equal(p.hp, 5); assert.ok(p.x <= BOUNDS.x);
+    sim.state.time = 76 / 14 - STEP; p.x = 0; p.z = 8; p.invulnerable = 0;
+    sim.tick(); assert.equal(p.hp, 5); assert.ok(Math.abs(p.x) >= 4); assert.equal(sim.state.over, false);
+  }
 });

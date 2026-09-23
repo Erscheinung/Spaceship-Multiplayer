@@ -197,3 +197,11 @@ The route now runs through original old-town, market, terrace, highline, canal a
 Scenic repairs one hull point after 14 damage-free seconds; Survival after 24. Brutal has no automatic repair. Neither repair revives a downed pilot.
 
 Both pilots must reload for protocol `neon-wing-city-v7`. Historical validation sections above refer to earlier versions; see the latest entry in `agents.md` for this update’s verification and limitations.
+
+### Dense city and endless solo — September 23, 2026
+
+Solo practice has unlimited hull in every difficulty (♥ ∞); collisions still deflect and slow the ship. Co-op retains five hearts and normal damage. The city now surrounds banked turns and high flight with a 31×31 pool of pastel buildings, varied heights, roof caps and facade bands in three instanced draw calls. Background buildings leave clearance around the flight route. Nearby districts have a broader plaster palette and detailed end facades; placement updates at block boundaries instead of every frame.
+
+Road towers carry original canvas-generated space travel posters on both approach faces, cycling through 24 sayings: short Cowboy Bebop, Star Trek and Star Wars references alongside original flight/travel lines. No external image assets are used.
+
+Focused validation: three collision/unlimited-hull tests, Svelte check, production build, and a Chromium render smoke check covering poster approaches and high banked flight. Physical-device performance has not been benchmarked.
