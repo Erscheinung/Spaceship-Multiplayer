@@ -199,7 +199,10 @@ export function makeTower(b) {
     return bake(g);
   }
   const base = palette[(b.id / 10) % palette.length | 0];
-  box(g, 0, b.height / 2 - 4, 0, b.width, b.height, b.depth, base, true);
+  // End the walls at the cap's underside: overlapping top faces at
+  // b.height - 4 z-fight when the camera looks down across the roof.
+  const wallHeight = b.height - .4;
+  box(g, 0, wallHeight / 2 - 4, 0, b.width, wallHeight, b.depth, base, true);
   box(g, 0, b.height - 4.2, 0, b.width + .2, .4, b.depth + .2, 0x4f6b70);
   const side = b.x < 0 ? 1 : -1;
   for (let y = -1; y < b.height - 5; y += 2.6) for (const off of [-1.9, 0, 1.9]) window(g, side, side * (b.width / 2), y, off, 0x365764, 1.05, 1.4);
