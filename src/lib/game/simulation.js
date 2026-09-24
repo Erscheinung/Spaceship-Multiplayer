@@ -8,6 +8,13 @@ export const CRUISE_SPEED = 25;
 export const BOOST_SPEED = 58;
 export const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z, (a.y ?? 0) - (b.y ?? 0));
+// Include the ship's travel between steps so a fast pass cannot skip an orb.
+const pickupRadius = 2.4; // Ship hull plus the visible pickup ring.
+function sweptDistance(start, end, point) {
+  const dx = end.x - start.x, dy = end.y - start.y, dz = end.z - start.z;
+  const t = clamp(((point.x - start.x) * dx + ((point.y ?? 0) - start.y) * dy + (point.z - start.z) * dz) / Math.max(1e-8, dx * dx + dy * dy + dz * dz), 0, 1);
+  return Math.hypot(point.x - start.x - dx * t, (point.y ?? 0) - start.y - dy * t, point.z - start.z - dz * t);
+}
 const player = (id, active) => ({ id, active, x: id ? 4 : -4, z: 8, y: 0, vy: 0, vx: 0, boost: 0, travel: 0, hp: 5, rate: 0, spread: 0, cooldown: 0, invulnerable: 2 });
 
 // Shared movement for authoritative steps and guest visual prediction.
@@ -57,6 +64,7 @@ export class Simulation {
     const s = this.state;
     if (s.over) return;
     const hullBefore = s.players.map(p => p.hp);
+    const positionsBefore = s.players.map(p => ({ x: p.x, y: p.y ?? 0, z: p.z }));
     s.time += dt; s.obstacles = cityObstacles(s.time, s.players.filter(p => p.active && p.hp > 0)); s.wave = 1 + Math.floor(s.time / 25);
     this.spawnClock -= dt;
     if (this.spawnClock <= 0) { this.spawnRock(); this.spawnClock = Math.max(0.12, this.difficulty.spawn - s.time * 0.004); }
@@ -119,8 +127,12 @@ export class Simulation {
       for (const drop of s.pickups) {
         if (drop.life <= 0) continue;
         const d = distance(p, drop);
-        if (d < 5) { drop.x += (p.x - drop.x) * dt * 4; drop.z += (p.z - drop.z) * dt * 4; drop.y = (drop.y ?? 0) + (p.y - (drop.y ?? 0)) * dt * 4; }
-        if (d < 1.3) { p[drop.type] = Math.min(drop.type === 'rate' ? 8 : 2, p[drop.type] + 1); drop.life = 0; this.burst(drop.x, drop.z, 'cyan', drop.y); }
+        const crossed = sweptDistance(positionsBefore[p.id], p, drop) <= pickupRadius;
+        if (d < 5) {
+          const pull = 1 - Math.exp(-dt * 4);
+          drop.x += (p.x - drop.x) * pull; drop.z += (p.z - drop.z) * pull; drop.y = (drop.y ?? 0) + (p.y - (drop.y ?? 0)) * pull;
+        }
+        if (crossed || distance(p, drop) <= pickupRadius) { p[drop.type] = Math.min(drop.type === 'rate' ? 8 : 2, p[drop.type] + 1); drop.life = 0; this.burst(drop.x, drop.z, 'cyan', drop.y); }
       }
     }
     for (const d of s.pickups) { d.z += dt * 1.8; d.life -= dt; }

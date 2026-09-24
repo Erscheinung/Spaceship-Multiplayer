@@ -62,11 +62,12 @@ function vendingMachine(group, side, x, z, color) {
 }
 
 function makeTree(group, x, z, scale = 1) {
-  box(group, x, -2.8, z, .34 * scale, 2.5 * scale, .34 * scale, 0x806851);
+  const groundY = -3.7;
+  box(group, x, groundY + 1.25 * scale, z, .34 * scale, 2.5 * scale, .34 * scale, 0x806851);
   const crown = outlined(new THREE.IcosahedronGeometry(1.5 * scale, 0), 0x5f947c);
-  crown.position.set(x, -.9 + scale * .15, z); group.add(crown);
+  crown.position.set(x, groundY + 3.9 * scale, z); group.add(crown);
   const crown2 = outlined(new THREE.IcosahedronGeometry(1.05 * scale, 0), 0x75a487);
-  crown2.position.set(x + .45 * scale, .35 + scale * .15, z + .2 * scale); group.add(crown2);
+  crown2.position.set(x + .45 * scale, groundY + 5.1 * scale, z + .2 * scale); group.add(crown2);
 }
 
 function makeRooftopTank(group, x, y, z, color) {
@@ -265,7 +266,11 @@ function makeDistrict(index) {
     }
     vendingMachine(g, side, side * 15.5, (index % 2 - .5) * 8 + 3.2, accents[(detail + 1) % accents.length]);
     box(g, side * 12.8, -3.05, (index % 2 - .5) * 8 - 3.2, .42, 1.05, .42, 0xd4a54e);
-    makeTree(g, side * (17.2 + (index % 2) * .7), (index % 2 - .5) * 8 - 1.7, .72 + (index % 3) * .12);
+    // Fit the entire canopy between the curb and facade, including the
+    // narrower sidewalks beside the widest buildings.
+    const facadeX = Math.abs(x) - w / 2;
+    const treeScale = Math.min(.72 + (index % 3) * .12, (facadeX - 14.6) / 3);
+    if (district !== 'garden') makeTree(g, side * (14.2 + treeScale * 1.5), (index % 2 - .5) * 8 - 1.7, treeScale);
   }
   // Every district has a signature piece visible from a few blocks away.
   if (district === 'market') {
@@ -284,7 +289,7 @@ function makeDistrict(index) {
     }
     addCable(g, 7, 13, 1.8);
   } else if (district === 'garden') {
-    for (const z of [-12, -4, 4, 12]) { makeTree(g, -17.5, z, .9); makeTree(g, 17.5, z + 1.5, .75); }
+    for (const z of [-12, -4, 4, 12]) { makeTree(g, -15.7, z, .9); makeTree(g, 15.7, z + 1.5, .75); }
   } else {
     addCable(g, -11, 14.5, 1.3);
     addCable(g, 10, 16.3, .8);
@@ -350,39 +355,48 @@ export function makeSkyline(scene) {
     previousCell = cell;
     const route = [];
     for (let d = distance - 900; d <= distance + 900; d += 12) route.push(courseFrame(d));
-    let i = 0;
+    // Never hide lit instances with a zero scale: the normal shader divides
+    // by that scale, and NaNs can spread into black blocks through bloom.
+    let i = 0, setbackCount = 0, aerialCount = 0;
     for (let x = cx - 15; x <= cx + 15; x++) for (let z = cz - 15; z <= cz + 15; z++) {
       const n = hash(x, z), px = x * 22, pz = z * 22;
       const clear = route.every(p => Math.hypot(p.x - px, p.z - pz) > 42);
+      if (!clear) continue;
       const profile = hash(x + 13, z - 5), detail = hash(x - 7, z + 19);
       const height = 18 + n * 43, width = 12 + hash(z, x + 8) * 6, depth = 12 + n * 6;
-      dummy.position.set(px, -8 + height / 2, pz); dummy.scale.set(clear ? width : 0, clear ? height : 0, clear ? depth : 0); dummy.updateMatrix(); buildings.setMatrixAt(i, dummy.matrix);
+      dummy.position.set(px, -8 + height / 2, pz); dummy.scale.set(width, height, depth); dummy.updateMatrix(); buildings.setMatrixAt(i, dummy.matrix);
       buildings.setColorAt(i, color.setHex(palette[Math.floor(n * palette.length)]));
       windows.setMatrixAt(i, dummy.matrix);
       windows.setColorAt(i, color.setHex(detail > .72 ? 0x806b62 : detail > .35 ? 0x536e70 : 0x39545e));
-      dummy.position.y = -8 + height; dummy.scale.set(clear ? width + .8 : 0, clear ? .8 : 0, clear ? depth + .8 : 0); dummy.updateMatrix(); roofs.setMatrixAt(i, dummy.matrix);
+      dummy.position.y = -8 + height; dummy.scale.set(width + .8, .8, depth + .8); dummy.updateMatrix(); roofs.setMatrixAt(i, dummy.matrix);
       for (let floor = 0; floor < 3; floor++) {
         dummy.position.y = -8 + height * (.3 + floor * .22);
-        dummy.scale.set(clear ? width + .12 : 0, clear ? .65 : 0, clear ? depth + .12 : 0);
+        dummy.scale.set(width + .12, .65, depth + .12);
         dummy.updateMatrix(); bands.setMatrixAt(i * 3 + floor, dummy.matrix);
       }
-      const setbackHeight = profile > .45 ? 3 + profile * 8 : 0;
-      dummy.position.set(px + (detail - .5) * 2, -8 + height + setbackHeight / 2, pz + (profile - .5) * 2);
-      dummy.scale.set(clear && setbackHeight ? width * (.44 + detail * .25) : 0, clear ? setbackHeight : 0, clear ? depth * .54 : 0);
-      dummy.updateMatrix(); setbacks.setMatrixAt(i, dummy.matrix);
-      setbacks.setColorAt(i, color.setHex(palette[Math.floor(profile * palette.length)]));
+      if (profile > .45) {
+        const setbackHeight = 3 + profile * 8;
+        dummy.position.set(px + (detail - .5) * 2, -8 + height + setbackHeight / 2, pz + (profile - .5) * 2);
+        dummy.scale.set(width * (.44 + detail * .25), setbackHeight, depth * .54);
+        dummy.updateMatrix(); setbacks.setMatrixAt(setbackCount, dummy.matrix);
+        setbacks.setColorAt(setbackCount++, color.setHex(palette[Math.floor(profile * palette.length)]));
+      }
       const roomHeight = 1.5 + detail * 2.5;
       dummy.position.set(px - width * .2, -8 + height + roomHeight / 2, pz + depth * .18);
-      dummy.scale.set(clear ? width * .23 : 0, clear ? roomHeight : 0, clear ? depth * .21 : 0);
+      dummy.scale.set(width * .23, roomHeight, depth * .21);
       dummy.updateMatrix(); roofRooms.setMatrixAt(i, dummy.matrix);
       roofRooms.setColorAt(i, color.setHex(detail > .5 ? 0x718e91 : 0xc8c8b6));
-      dummy.position.set(px + width * .27, -8 + height + 2 + profile * 3, pz - depth * .25);
-      dummy.scale.set(clear && detail > .22 ? 1 : 0, clear ? 4 + profile * 6 : 0, 1);
-      dummy.updateMatrix(); aerials.setMatrixAt(i, dummy.matrix);
+      if (detail > .22) {
+        dummy.position.set(px + width * .27, -8 + height + 2 + profile * 3, pz - depth * .25);
+        dummy.scale.set(1, 4 + profile * 6, 1);
+        dummy.updateMatrix(); aerials.setMatrixAt(aerialCount++, dummy.matrix);
+      }
       i++;
     }
+    for (const mesh of [buildings, roofs, windows, roofRooms]) mesh.count = i;
+    bands.count = i * 3; setbacks.count = setbackCount; aerials.count = aerialCount;
     for (const mesh of [buildings, roofs, bands, windows, setbacks, roofRooms, aerials]) mesh.instanceMatrix.needsUpdate = true;
-    for (const mesh of [buildings, windows, setbacks, roofRooms]) mesh.instanceColor.needsUpdate = true;
+    for (const mesh of [buildings, windows, setbacks, roofRooms]) if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   };
 }
 
