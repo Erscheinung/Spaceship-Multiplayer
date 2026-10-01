@@ -128,7 +128,7 @@ Connection attempts retry up to three times before launch; the third forces rela
 
 On September 17, the production `/api/ice` returned an empty server list while the local Metered credentials successfully returned five ICE servers, including TURN. This was resolved by configuring the existing private `METERED_DOMAIN` and `METERED_API_KEY` in Vercel's Production environment and redeploying. Live `/api/ice` now returns `provider: "metered"` and five servers. Chromium verification confirmed an echoed payload through two relay candidates; a live two-player test forced relay-only connections and verified launch, guest state reception, and guest-initiated pause reaching the host. Separate physical devices/carrier networks remain untested. For future deployments, configure these private variables and verify TURN data transfer; never publish the API key.
 
-Tilt steering requires a secure context (HTTPS), device support, and permission where the browser asks. Drag steering remains available if permission or sensors are unavailable. The tilt neutral position recalibrates after screen rotation; the CALIBRATE button resets it manually. Sensitivity is adjustable from the terminal or pause menu.
+For phone tilt, choose **Tilt device** in Control settings, hold the phone comfortably, then tap **ENABLE TILT** and allow motion access. Permission is requested directly from the tap for Safari; choosing the dropdown alone does not request permission. Tilt requires HTTPS and device sensor support. If access was denied, allow Motion and Orientation access in browser settings and reload before retrying. Drag steering remains available when sensors are unavailable. Screen rotation recalibrates the neutral position; **CALIBRATE TILT** resets it manually. Sensitivity is adjustable from the terminal or pause menu. Long presses on the game screen and controls suppress text highlighting and browser callouts; room-code editing and copying remain available. See [WebKit’s motion permission gesture requirement](https://bugs.webkit.org/show_bug.cgi?id=195731) and [Apple’s Safari CSS reference](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariCSSRef/Articles/StandardCSSProperties.html).
 
 ## Repository map
 
@@ -147,7 +147,8 @@ src/
       course.js                Shared deterministic route and tower geometry
       simulation.js            Pure host-authoritative fixed-step game rules
       procedural.js            Batched outlined architecture, ships, rocks, cores
-      scene.js                 Chase camera, daylight, curved road and subtle bloom
+      scene.js                 Chase camera, daylight and subtle bloom
+      road.js                  Incremental road, curb and guard-field buffers
       Engine.js                Game loop, input, snapshots and visual interpolation
 tests/
   simulation.test.js           Deterministic game-rule tests
@@ -159,6 +160,8 @@ agents.md                     Objective, progress and next-session handoff
 ```
 
 All meshes are generated in code. City blocks batch static geometry by material and share dark contour lines. Toon materials, warm plaster, teal glazing, trees, street lamps, overhead infrastructure and soft shadow maps from the actual geometry establish the illustrated style. A sampled periodic route provides a shared 3D position, tangent, bank and elevation frame. Road ribbons, guard fields, scenery, hazards, ships and chase camera use that frame; deterministic obstacle layouts and collision boxes come from `course.js`. Simulation coordinates remain relative to the route, so shots follow the corridor rather than inertial world-space ballistic trajectories. Each pilot's camera follows their own ship, keeping it near the center without pulling away in portrait mode. This is a guided roller-coaster-style skyway with lateral/forward dodging and altitude control; it is not a free-roaming six-axis flight simulator or a vertical-loop track.
+
+Road and curb geometry uses a rolling 160-segment buffer: advancing recycles only the segments entering view. The dense skyline retains existing building instances, updates entering/exiting grid cells, and rasterizes route clearance once per route interval. Changed GPU buffer ranges are marked for upload. Windows, facade bands, roof details, trees, outlined districts and lighting remain in place. These changes target the scenery-update spikes that become more frequent during Shift boost; actual Safari/iOS frame pacing has not been measured for this update.
 
 The composer uses FXAA edge smoothing and restrained bloom limited to bright effects. No dark overlay covers active gameplay. No models or texture assets need downloading. Optional Google Fonts enhance the terminal typography; system fallbacks remain usable offline.
 
@@ -205,3 +208,9 @@ Solo practice has unlimited hull in every difficulty (♥ ∞); collisions still
 Road towers carry original canvas-generated space travel posters on both approach faces, cycling through 24 sayings: short Cowboy Bebop, Star Trek and Star Wars references alongside original flight/travel lines. No external image assets are used.
 
 Focused validation: three collision/unlimited-hull tests, Svelte check, production build, and a Chromium render smoke check covering poster approaches and high banked flight. Physical-device performance has not been benchmarked.
+
+## Safari boost and phone controls — October 2, 2026
+
+Replaced full road/skyline rebuilds with incremental rolling updates and reused per-frame transform objects to reduce allocation. Added an explicit tap for Safari tilt permission, canceled stale permission requests, normalized calibration angle seams, and made sensor smoothing independent of event frequency. Suppressed long-press selection and callouts across the game UI while retaining room-code editing/copying.
+
+No tests, checks, builds or browser runs performed, preserving the earlier no-testing constraint. Physical Safari/iOS performance and tilt operation remain unverified.

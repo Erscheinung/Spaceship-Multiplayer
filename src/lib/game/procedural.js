@@ -323,22 +323,60 @@ function skylineWindows() {
   return geometry;
 }
 
+// Dense instance pools retain existing cells across grid crossings. Removing
+// a cell swaps the last active instance into its slot; only changed ranges
+// are uploaded, with no zero-scale hidden instances in the lighting shader.
+function instancePool(mesh, colored = false) {
+  const slots = new Map(), keys = [];
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  if (colored) { mesh.setColorAt(0, new THREE.Color()); mesh.instanceColor.setUsage(THREE.DynamicDrawUsage); }
+  mesh.count = 0; mesh.frustumCulled = false;
+  let first = Infinity, last = -1;
+  const dirty = index => { first = Math.min(first, index); last = Math.max(last, index); };
+  return {
+    mesh,
+    put(key, matrix, color) {
+      let index = slots.get(key);
+      if (index === undefined) { index = keys.length; slots.set(key, index); keys.push(key); }
+      mesh.setMatrixAt(index, matrix);
+      if (colored) mesh.setColorAt(index, color);
+      mesh.count = keys.length; dirty(index);
+    },
+    remove(key) {
+      const index = slots.get(key);
+      if (index === undefined) return;
+      const tail = keys.length - 1;
+      if (index !== tail) {
+        mesh.instanceMatrix.array.copyWithin(index * 16, tail * 16, tail * 16 + 16);
+        if (colored) mesh.instanceColor.array.copyWithin(index * 3, tail * 3, tail * 3 + 3);
+        keys[index] = keys[tail]; slots.set(keys[index], index); dirty(index);
+      }
+      keys.pop(); slots.delete(key); mesh.count = keys.length;
+    },
+    flush() {
+      if (last < first) return;
+      mesh.instanceMatrix.addUpdateRange(first * 16, (last - first + 1) * 16); mesh.instanceMatrix.needsUpdate = true;
+      if (colored) { mesh.instanceColor.addUpdateRange(first * 3, (last - first + 1) * 3); mesh.instanceColor.needsUpdate = true; }
+      first = Infinity; last = -1;
+    }
+  };
+}
+
 export function makeSkyline(scene) {
   const blocks = Array.from({ length: 18 }, (_, i) => { const g = makeDistrict(i); scene.add(g); return g; });
-  const basis = new THREE.Matrix4();
-  let previousBlock = null, previousCell = '';
-  // World-aligned outer districts fill the view during banks and hairpins.
-  // Instancing keeps almost a thousand distant buildings to a few draw calls.
+  const basis = new THREE.Matrix4(), right = new THREE.Vector3(), up = new THREE.Vector3(), back = new THREE.Vector3();
+  let previousBlock = null, previousCell = '', previousRoute = null;
   const count = 31 * 31;
-  const buildings = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count);
-  const roofs = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0x536f72), count);
-  const bands = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xbfd2c9), count * 3);
-  const windows = new THREE.InstancedMesh(skylineWindows(), new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide}), count);
-  const setbacks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count);
-  const roofRooms = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count);
-  const aerials = new THREE.InstancedMesh(new THREE.CylinderGeometry(.05,.08,1,5), toon(0x344c52), count);
-  for (const mesh of [buildings, roofs, bands, windows, setbacks, roofRooms, aerials]) mesh.frustumCulled = false;
-  scene.add(buildings, roofs, bands, windows, setbacks, roofRooms, aerials);
+  const buildings = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count), true);
+  const roofs = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0x536f72), count));
+  const bands = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xbfd2c9), count * 3));
+  const windows = instancePool(new THREE.InstancedMesh(skylineWindows(), new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide}), count), true);
+  const setbacks = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count), true);
+  const roofRooms = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count), true);
+  const aerials = instancePool(new THREE.InstancedMesh(new THREE.CylinderGeometry(.05,.08,1,5), toon(0x344c52), count));
+  const pools = [buildings, roofs, bands, windows, setbacks, roofRooms, aerials];
+  for (const pool of pools) scene.add(pool.mesh);
+  const cells = new Map(), clearance = new Set();
   const dummy = new THREE.Object3D(), color = new THREE.Color();
   const hash = (x, z) => { const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return n - Math.floor(n); };
   return (time, viewZ = 0) => {
@@ -347,59 +385,64 @@ export function makeSkyline(scene) {
       previousBlock = block;
       blocks.forEach((g, i) => {
         const section = block - 4 + ((i - (block - 4) % blocks.length + blocks.length) % blocks.length);
+        if (g.userData.section === section) return;
+        g.userData.section = section;
         const f = courseFrame(section * 36);
         g.position.set(f.x, f.y, f.z);
-        g.quaternion.setFromRotationMatrix(basis.makeBasis(
-          new THREE.Vector3(f.right.x, f.right.y, f.right.z), new THREE.Vector3(f.up.x, f.up.y, f.up.z), new THREE.Vector3(-f.forward.x, -f.forward.y, -f.forward.z)));
+        right.set(f.right.x, f.right.y, f.right.z); up.set(f.up.x, f.up.y, f.up.z); back.set(-f.forward.x, -f.forward.y, -f.forward.z);
+        g.quaternion.setFromRotationMatrix(basis.makeBasis(right, up, back));
       });
     }
-    const f = courseFrame(distance), cx = Math.floor(f.x / 22), cz = Math.floor(f.z / 22), cell = `${cx}:${cz}:${Math.floor(distance / 140)}`;
+    const f = courseFrame(distance), cx = Math.floor(f.x / 22), cz = Math.floor(f.z / 22), routeSection = Math.floor(distance / 140);
+    const cell = `${cx}:${cz}:${routeSection}`;
     if (cell === previousCell) return;
     previousCell = cell;
-    const route = [];
-    for (let d = distance - 900; d <= distance + 900; d += 12) route.push(courseFrame(d));
-    // Never hide lit instances with a zero scale: the normal shader divides
-    // by that scale, and NaNs can spread into black blocks through bloom.
-    let i = 0, setbackCount = 0, aerialCount = 0;
+    if (routeSection !== previousRoute) {
+      previousRoute = routeSection; clearance.clear();
+      // Rasterize route clearance once, rather than testing every building
+      // against 151 route samples at every 22-metre grid crossing. Padding
+      // keeps the entire rolling interval clear, including nearby hairpins.
+      const anchor = routeSection * 140;
+      for (let d = anchor - 1000; d <= anchor + 1140; d += 12) {
+        const p = courseFrame(d), rx = Math.floor(p.x / 22), rz = Math.floor(p.z / 22);
+        for (let x = rx - 2; x <= rx + 2; x++) for (let z = rz - 2; z <= rz + 2; z++) {
+          if ((p.x - x * 22) ** 2 + (p.z - z * 22) ** 2 <= 42 ** 2) clearance.add(`${x}:${z}`);
+        }
+      }
+    }
+    for (const [key, position] of cells) {
+      if (Math.abs(position.x - cx) <= 15 && Math.abs(position.z - cz) <= 15 && !clearance.has(key)) continue;
+      cells.delete(key);
+      for (const pool of [buildings, roofs, windows, setbacks, roofRooms, aerials]) pool.remove(key);
+      for (let floor = 0; floor < 3; floor++) bands.remove(`${key}:${floor}`);
+    }
     for (let x = cx - 15; x <= cx + 15; x++) for (let z = cz - 15; z <= cz + 15; z++) {
+      const key = `${x}:${z}`;
+      if (cells.has(key) || clearance.has(key)) continue;
+      cells.set(key, { x, z });
       const n = hash(x, z), px = x * 22, pz = z * 22;
-      const clear = route.every(p => Math.hypot(p.x - px, p.z - pz) > 42);
-      if (!clear) continue;
       const profile = hash(x + 13, z - 5), detail = hash(x - 7, z + 19);
       const height = 18 + n * 43, width = 12 + hash(z, x + 8) * 6, depth = 12 + n * 6;
-      dummy.position.set(px, -8 + height / 2, pz); dummy.scale.set(width, height, depth); dummy.updateMatrix(); buildings.setMatrixAt(i, dummy.matrix);
-      buildings.setColorAt(i, color.setHex(palette[Math.floor(n * palette.length)]));
-      windows.setMatrixAt(i, dummy.matrix);
-      windows.setColorAt(i, color.setHex(detail > .72 ? 0x806b62 : detail > .35 ? 0x536e70 : 0x39545e));
-      dummy.position.y = -8 + height; dummy.scale.set(width + .8, .8, depth + .8); dummy.updateMatrix(); roofs.setMatrixAt(i, dummy.matrix);
+      dummy.position.set(px, -8 + height / 2, pz); dummy.scale.set(width, height, depth); dummy.updateMatrix();
+      buildings.put(key, dummy.matrix, color.setHex(palette[Math.floor(n * palette.length)]));
+      windows.put(key, dummy.matrix, color.setHex(detail > .72 ? 0x806b62 : detail > .35 ? 0x536e70 : 0x39545e));
+      dummy.position.y = -8 + height; dummy.scale.set(width + .8, .8, depth + .8); dummy.updateMatrix(); roofs.put(key, dummy.matrix);
       for (let floor = 0; floor < 3; floor++) {
-        dummy.position.y = -8 + height * (.3 + floor * .22);
-        dummy.scale.set(width + .12, .65, depth + .12);
-        dummy.updateMatrix(); bands.setMatrixAt(i * 3 + floor, dummy.matrix);
+        dummy.position.y = -8 + height * (.3 + floor * .22); dummy.scale.set(width + .12, .65, depth + .12); dummy.updateMatrix(); bands.put(`${key}:${floor}`, dummy.matrix);
       }
       if (profile > .45) {
         const setbackHeight = 3 + profile * 8;
-        dummy.position.set(px + (detail - .5) * 2, -8 + height + setbackHeight / 2, pz + (profile - .5) * 2);
-        dummy.scale.set(width * (.44 + detail * .25), setbackHeight, depth * .54);
-        dummy.updateMatrix(); setbacks.setMatrixAt(setbackCount, dummy.matrix);
-        setbacks.setColorAt(setbackCount++, color.setHex(palette[Math.floor(profile * palette.length)]));
+        dummy.position.set(px + (detail - .5) * 2, -8 + height + setbackHeight / 2, pz + (profile - .5) * 2); dummy.scale.set(width * (.44 + detail * .25), setbackHeight, depth * .54); dummy.updateMatrix();
+        setbacks.put(key, dummy.matrix, color.setHex(palette[Math.floor(profile * palette.length)]));
       }
       const roomHeight = 1.5 + detail * 2.5;
-      dummy.position.set(px - width * .2, -8 + height + roomHeight / 2, pz + depth * .18);
-      dummy.scale.set(width * .23, roomHeight, depth * .21);
-      dummy.updateMatrix(); roofRooms.setMatrixAt(i, dummy.matrix);
-      roofRooms.setColorAt(i, color.setHex(detail > .5 ? 0x718e91 : 0xc8c8b6));
+      dummy.position.set(px - width * .2, -8 + height + roomHeight / 2, pz + depth * .18); dummy.scale.set(width * .23, roomHeight, depth * .21); dummy.updateMatrix();
+      roofRooms.put(key, dummy.matrix, color.setHex(detail > .5 ? 0x718e91 : 0xc8c8b6));
       if (detail > .22) {
-        dummy.position.set(px + width * .27, -8 + height + 2 + profile * 3, pz - depth * .25);
-        dummy.scale.set(1, 4 + profile * 6, 1);
-        dummy.updateMatrix(); aerials.setMatrixAt(aerialCount++, dummy.matrix);
+        dummy.position.set(px + width * .27, -8 + height + 2 + profile * 3, pz - depth * .25); dummy.scale.set(1, 4 + profile * 6, 1); dummy.updateMatrix(); aerials.put(key, dummy.matrix);
       }
-      i++;
     }
-    for (const mesh of [buildings, roofs, windows, roofRooms]) mesh.count = i;
-    bands.count = i * 3; setbacks.count = setbackCount; aerials.count = aerialCount;
-    for (const mesh of [buildings, roofs, bands, windows, setbacks, roofRooms, aerials]) mesh.instanceMatrix.needsUpdate = true;
-    for (const mesh of [buildings, windows, setbacks, roofRooms]) if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    for (const pool of pools) pool.flush();
   };
 }
 

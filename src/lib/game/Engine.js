@@ -12,6 +12,8 @@ export class Engine {
   constructor(container, { onHud, onPause, onError, onStats }) {
     this.world = createScene(container); this.onHud = onHud; this.onPause = onPause; this.onStats = onStats;
     this.objects = new Map(); this.keys = new Set(); this.touch = { x: 0, z: 0 }; this.actions = { boost:false, lift:false }; this.state = null;
+    this.orientationBasis = new THREE.Matrix4(); this.frameRight = new THREE.Vector3(); this.frameUp = new THREE.Vector3(); this.frameBack = new THREE.Vector3();
+    this.bulletDirection = new THREE.Vector3(); this.bulletForward = new THREE.Vector3(0, 0, 1); this.bulletRotation = new THREE.Quaternion();
     this.mode = 'attract'; this.localId = 0; this.paused = false; this.destroyed = false; this.accumulator = 0; this.snapshotClock = 0; this.hudClock = 0; this.attractTime = 0;
     this.statsClock = 0; this.statsFrames = 0; this.networkStats = null; this.remoteSnapshots = []; this.remotePresentationTime = 0; this.latestSnapshotArrival = 0; this.latestSnapshotTime = 0; this.presentationOffset = { x: 0, y: 0, z: 0 };
     this.ships = [makeShip(0), makeShip(1)]; this.ships.forEach((s, i) => { s.position.set(i ? 4 : -4, 0, 7); this.world.scene.add(s); });
@@ -195,7 +197,8 @@ export class Engine {
     const time = this.renderTime(), age = time - (this.state?.time ?? time);
     const orient = (object, z) => {
       const f=courseFrame(time*FLIGHT_SPEED-z);
-      object.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(f.right.x,f.right.y,f.right.z),new THREE.Vector3(f.up.x,f.up.y,f.up.z),new THREE.Vector3(-f.forward.x,-f.forward.y,-f.forward.z)));
+      this.frameRight.set(f.right.x,f.right.y,f.right.z); this.frameUp.set(f.up.x,f.up.y,f.up.z); this.frameBack.set(-f.forward.x,-f.forward.y,-f.forward.z);
+      object.quaternion.setFromRotationMatrix(this.orientationBasis.makeBasis(this.frameRight,this.frameUp,this.frameBack));
     };
     this.ships.forEach((ship, i) => {
       const remote = this.mode === 'client' && i !== this.localId;
@@ -223,7 +226,7 @@ export class Engine {
     sync(this.state?.obstacles ?? cityObstacles(time), 't', makeTower, () => {});
     sync(this.state?.rocks ?? [], 'r', r => makeRock(r.seed), (o, r) => { o.scale.setScalar(r.r); o.rotateX(time*r.spin);o.rotateY(time*.3); });
     sync(this.state?.pickups ?? [], 'p', p => makePickup(p.type), o => { o.rotateX(time);o.rotateY(time*1.5);o.rotateZ(Math.PI/4); o.position.y += Math.sin(time * 4) * 0.08; });
-    sync(this.state?.bullets ?? [], 'b', b => new THREE.Mesh(new THREE.SphereGeometry(0.17, 5, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(SHIP_COLORS[this.state?.settings?.colors[b.owner]] ?? COLORS.cyan).multiplyScalar(5) })), (o, b) => { o.scale.set(1, 1, 3); o.quaternion.multiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(b.vx,b.vy ?? 0,b.vz).normalize())); });
+    sync(this.state?.bullets ?? [], 'b', b => new THREE.Mesh(new THREE.SphereGeometry(0.17, 5, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(SHIP_COLORS[this.state?.settings?.colors[b.owner]] ?? COLORS.cyan).multiplyScalar(5) })), (o, b) => { o.scale.set(1, 1, 3); o.quaternion.multiply(this.bulletRotation.setFromUnitVectors(this.bulletForward,this.bulletDirection.set(b.vx,b.vy ?? 0,b.vz).normalize())); });
     sync(this.state?.effects ?? [], 'e', e => {
       const o = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(COLORS[e.color]).multiplyScalar(3), wireframe: true, transparent: true, depthWrite: false })); return o;
     }, (o, e) => { o.scale.setScalar((0.45 - e.life) * 7 + 0.4); o.material.opacity = e.life / 0.45; o.rotateY(time*2); });

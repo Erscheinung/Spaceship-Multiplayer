@@ -11,7 +11,7 @@
   let damageNotice = '', damageFlash = false, damageNoticeTimer;
   let steeringBoost = false, steeringPointer = null;
   let music, musicMuted = false, musicBlocked = false;
-  let recovering = false;
+  let recovering = false, tiltEnabled = false, tiltBusy = false, tiltAttempt = 0;
   $: paused = recovering || flags.some(Boolean);
   $: me = host ? 0 : 1;
   $: playing = screen === 'game';
@@ -19,13 +19,20 @@
 
   onMount(() => {
     let disposed = false;
+    const preventGameSelection = e => {
+      const target=e.target;
+      if(target?.closest?.('input, textarea, [contenteditable], .room-code'))return;
+      if(target?.closest?.('.game-canvas, .shell'))e.preventDefault();
+    };
+    document.addEventListener('contextmenu',preventGameSelection);
+    document.addEventListener('selectstart',preventGameSelection);
     music = new MusicController();
     musicMuted = music.muted;
     Promise.all([import('$lib/game/Engine.js'), import('$lib/net/PeerSession.js')]).then(([game, net]) => {
       if (disposed) return; Engine = game.Engine; PeerSession = net.PeerSession; initEngine();
     }).catch(e => { error = `Unable to initialize graphics: ${e.message}`; });
-    tilt=new TiltInput((value,message)=>{if(message){controlMessage=message;controlMode='drag';}if(value&&playing&&!paused&&controlMode==='tilt'&&engine)engine.touch={x:value.x*sensitivity,z:value.z*sensitivity};});
-    return () => { disposed = true; clearTimeout(damageNoticeTimer); tilt?.disable(); music?.destroy(); engine?.destroy(); network?.destroy(); };
+    tilt=new TiltInput((value,message)=>{if(message){controlMessage=message;tiltEnabled=false;releaseFlightControls();controlMode='drag';}if(value&&playing&&!paused&&controlMode==='tilt'&&engine)engine.touch={x:value.x*sensitivity,z:value.z*sensitivity};});
+    return () => { disposed = true; tiltAttempt++; document.removeEventListener('contextmenu',preventGameSelection); document.removeEventListener('selectstart',preventGameSelection); clearTimeout(damageNoticeTimer); tilt?.disable(); music?.destroy(); engine?.destroy(); network?.destroy(); };
 
   });
   function tryPlayMusic() {
@@ -119,9 +126,20 @@
     screen = 'menu'; flags = [false, false]; hud = null; error = ''; busy = false; status = ''; replayPending = false; telemetry = { fps: 0, packetLoss: null }; clearDamageFeedback(); initEngine();
   }
   async function copy() { try { await navigator.clipboard.writeText(room); copied = true; setTimeout(() => copied = false, 1500); } catch { status = 'Select and copy the room code below.'; } }
-  async function changeControls(value) {
-    controlMessage='';releaseFlightControls();tilt?.disable();controlMode=value;
-    if(value==='tilt')try{await tilt.enable();controlMessage='Tilt to steer; hold CLIMB to rise. Recalibrate after rotating.';}catch(e){controlMode='drag';controlMessage=e.message;}
+  function changeControls(value) {
+    tiltAttempt++; releaseFlightControls(); tilt?.disable(); tiltEnabled=false; tiltBusy=false; controlMode=value;
+    controlMessage=value==='tilt' ? 'Hold the phone comfortably, then tap ENABLE TILT and allow motion access.' : '';
+  }
+  async function enableTilt() {
+    if(tiltBusy || !tilt)return;
+    const attempt=++tiltAttempt;
+    tiltBusy=true; controlMessage='Waiting for motion permission…';
+    try {
+      const enabled=await tilt.enable();
+      if(attempt===tiltAttempt && enabled && controlMode==='tilt') { tiltEnabled=true; controlMessage='Tilt to steer; hold CLIMB to rise. CALIBRATE sets your current hold as neutral.'; }
+    } catch(e) {
+      if(attempt===tiltAttempt && controlMode==='tilt') { tiltEnabled=false; controlMessage=e.message; }
+    } finally { if(attempt===tiltAttempt)tiltBusy=false; }
   }
   function releaseFlightControls(){steeringPointer=null;boostHeld=false;liftHeld=false;steeringBoost=false;stick={x:0,z:0};if(engine){engine.touch={x:0,z:0};engine.actions={boost:false,lift:false};}}
   function holdAction(e,action){if(paused)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);engine.actions[action]=true;if(action==='lift')liftHeld=true;}
@@ -224,7 +242,7 @@
         {/if}
         {#if (busy || screen === 'lobby') && !error}<div class="connection-progress" role="status"><div class="link-orbit"><span>✦</span><i></i><span>✦</span></div><p>{status}</p><small>Find room → negotiate route → launch together</small></div>{/if}
         {#if error}<p class="error" role="alert">{error}</p>{/if}
-<details class="control-details"><summary>Control settings</summary><div class="control-settings"><label for="steering">PHONE STEERING</label><select id="steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="sensitivity">STEERING SENSITIVITY</label><input id="sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div></details>
+<details class="control-details"><summary>Control settings</summary><div class="control-settings"><label for="steering">PHONE STEERING</label><select id="steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='tilt'}<button type="button" class="tilt-enable" disabled={tiltBusy} onclick={tiltEnabled ? ()=>tilt.calibrate() : enableTilt}>{tiltBusy ? 'ALLOW MOTION ACCESS…' : tiltEnabled ? 'CALIBRATE TILT' : 'ENABLE TILT'}</button>{/if}{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="sensitivity">STEERING SENSITIVITY</label><input id="sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div></details>
         <div class="panel-bottom"><span class="live-dot"></span> WEBRTC DIRECT LINK <span>2 PLAYERS MAX</span></div>
       </section>
 
@@ -242,7 +260,7 @@
     <div class="route-label"><span>SHIFT / BOOST · SPACE / CLIMB</span><strong>The Afterlight Skyway</strong></div>
     <div class="game-hint">BANK THROUGH THE SKYWAY <span>◇</span> COLLECT UPGRADE CORES <span>◇</span> {hud?.settings?.difficulty==='brutal' ? 'ALIGN YOUR SHOTS' : 'WEAPONS AUTO-FIRE'}</div>
     {#if !paused && !hud?.over && !error}<div class="touch-controls">
-      {#if controlMode==='drag'}<button aria-label="Drag to steer" class:boost-active={steeringBoost} class="touch-pad" onpointerdown={touchMove} onpointermove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))touchMove(e);}} onpointerup={releaseSteering} onpointercancel={releaseSteering} onlostpointercapture={releaseSteering}><span class="touch-stick" style:transform={`translate(${stick.x*28}px,${stick.z*28}px)`}>✥</span><span class="touch-boost-badge" aria-live="polite">{steeringBoost ? 'BOOST' : ''}</span></button>{:else}<button class="calibrate" onclick={()=>tilt.calibrate()}>◎<br/>CALIBRATE TILT</button>{/if}
+      {#if controlMode==='drag'}<button aria-label="Drag to steer" class:boost-active={steeringBoost} class="touch-pad" onpointerdown={touchMove} onpointermove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))touchMove(e);}} onpointerup={releaseSteering} onpointercancel={releaseSteering} onlostpointercapture={releaseSteering}><span class="touch-stick" style:transform={`translate(${stick.x*28}px,${stick.z*28}px)`}>✥</span><span class="touch-boost-badge" aria-live="polite">{steeringBoost ? 'BOOST' : ''}</span></button>{:else}<button class="calibrate" disabled={tiltBusy} onclick={tiltEnabled ? ()=>tilt.calibrate() : enableTilt}>◎<br/>{tiltEnabled ? 'CALIBRATE TILT' : 'ENABLE TILT'}</button>{/if}
       <span class="touch-label">{controlMode==='drag'?(steeringBoost?'OUTER BOOST ACTIVE':'DRAG TO STEER · PULL OUT TO BOOST'):'TILT TO STEER · HOLD CLIMB TO RISE'}</span>
     </div><div class="flight-actions">
       <button aria-label="Hold to climb" class:held={liftHeld} onpointerdown={e=>holdAction(e,'lift')} onpointerup={()=>releaseAction('lift')} onpointercancel={()=>releaseAction('lift')} onlostpointercapture={()=>releaseAction('lift')}>↑<small>CLIMB</small></button>
@@ -254,7 +272,7 @@
         <p role="status">{error || (recovering ? `${status} Your flight is held while the link recovers.` : hud?.over ? 'The city takes this one. Your next run is waiting.' : solo ? 'Your run is paused.' : 'Both ships are paused. Each pilot must clear their own pause to resume.')}</p>
         <button class="music-toggle pause-music-toggle" class:muted={musicMuted} type="button" aria-pressed={musicMuted} aria-label={musicMuted ? 'Unmute music' : 'Mute music'} onclick={toggleMusic}><span aria-hidden="true">{musicMuted ? '♫̸' : '♫'}</span> {musicMuted ? 'MUSIC OFF' : 'MUSIC ON'}</button>
         {#if musicBlocked && !musicMuted}<p class="music-note" role="status">Music playback was blocked. Resume to try again.</p>{/if}
-<div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
+<div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='tilt'}<button type="button" class="tilt-enable" disabled={tiltBusy} onclick={tiltEnabled ? ()=>tilt.calibrate() : enableTilt}>{tiltBusy ? 'ALLOW MOTION ACCESS…' : tiltEnabled ? 'CALIBRATE TILT' : 'ENABLE TILT'}</button>{/if}{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
         <div class="end-stats"><div><small>SURVIVED</small><strong>{time(hud?.time)}</strong></div><div><small>TEAM SCORE</small><strong>{hud?.score ?? 0}</strong></div></div>
         {#if !hud?.over && !error}<button class="primary full" onclick={() => togglePause()} disabled={recovering || !flags[me]}>{recovering ? 'RESTORING LINK…' : flags[me] ? 'RESUME FLIGHT' : 'WAITING FOR WINGMATE'} <span>→</span></button>{/if}
         {#if hud?.over}<button class="primary full" onclick={playAgain} disabled={replayPending || (!solo && !network?.connection?.open)}>{replayPending ? 'WAITING FOR WINGMATE…' : 'PLAY AGAIN'} <span>↻</span></button>{/if}
