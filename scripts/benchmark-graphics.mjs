@@ -22,9 +22,13 @@ try {
     const { createScene } = await import(`${moduleRoot}/scene.js`);
     const { makeShip } = await import(`${moduleRoot}/procedural.js`);
     const { courseFrame, worldPosition, FLIGHT_SPEED } = await import(`${moduleRoot}/course.js`);
+    const { waitForMaterialAtlas } = await import(`${moduleRoot}/storefronts.js`);
     const THREE = await import('/node_modules/three/build/three.module.js');
     let hour = 12;
     const world = createScene(document.querySelector('#view'), { clock: () => new Date(2026, 6, 10, hour) });
+    // Image decode/upload must complete before the synchronous frame sample;
+    // otherwise a tight render loop can accidentally measure fallback colors.
+    if (waitForMaterialAtlas && !await waitForMaterialAtlas()) throw new Error('Material atlas did not load; refusing to benchmark fallback surfaces.');
     const ship = makeShip(0); world.scene.add(ship);
     const gl = world.renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
     const renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);

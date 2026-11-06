@@ -2,7 +2,7 @@
 
 A two-player illustrated city flight survival game built with **SvelteKit + pure Three.js + PeerJS**. Follow a banking chase camera along an elevated skyway with hairpins, climbs and descending bends, dodge poles and overhead gates, evade orange asteroids, and collect upgrades while your weapons automatically target the nearest threat.
 
-The illustrated direction reinterprets the outlined architecture and street-level composition of [Messenger by Abeto](https://messenger.abeto.co). All geometry is original and generated in JavaScript; no Blender, downloaded models, or copied reference assets. The licensed soundtrack is credited below.
+The illustrated direction reinterprets the outlined architecture and street-level composition of [Messenger by Abeto](https://messenger.abeto.co). All geometry is original and generated in JavaScript; no Blender, downloaded models, or copied reference assets. A bundled illustrated material atlas supplies tactile timber, masonry, ceramics, plaster, roofs, cloth and paving; its [source and generation prompt](docs/texture-assets.md) are included. The licensed soundtrack is credited below.
 
 ## Live preview
 
@@ -153,6 +153,7 @@ src/
       atmosphere.js            Device-local civil-clock sun, moon and sky
       surfaces.js              Filtered material shader kit and metric coordinates
       storefronts.js           Original illustrated local-business atlas
+      materialAtlas.js         Shared surface atlas, padding and isolated mips
       road.js                  Incremental road, curb and guard-field buffers
       Engine.js                Game loop, input, snapshots and visual interpolation
 tests/
@@ -168,7 +169,7 @@ All meshes are generated in code. City blocks batch static geometry by material 
 
 Road and curb geometry uses a rolling 160-segment buffer: advancing recycles only the segments entering view. The dense skyline retains existing building instances, updates entering/exiting grid cells, and rasterizes route clearance once per route interval. Changed GPU buffer ranges are marked for upload. Windows, facade bands, roof details, trees, outlined districts and lighting remain in place. These changes target the scenery-update spikes that become more frequent during Shift boost; actual Safari/iOS frame pacing has not been measured for this update.
 
-The composer uses FXAA edge smoothing and restrained bloom limited to bright effects. No dark overlay covers active gameplay. No models or texture assets need downloading. Optional Google Fonts enhance the terminal typography; system fallbacks remain usable offline.
+The composer uses FXAA edge smoothing and restrained bloom limited to bright effects. No dark overlay covers active gameplay. The material image is bundled with the app; no external model or texture service is needed. Optional Google Fonts enhance the terminal typography; system fallbacks remain usable offline.
 
 See [the visual direction](docs/art-direction.md) for the material kit, local businesses, sky behavior and future art standards.
 
@@ -225,7 +226,7 @@ No tests, checks, builds or browser runs performed, preserving the earlier no-te
 
 ## Local-time illustrated materials — November 2026
 
-The city now uses a purpose-designed material kit: gently weathered plaster, selected staggered masonry, timber shopfronts, paving, overlapping roof tiles, striped awnings, framed windows and warm lanterns. Six architectural families add gables, stepped parapets, planted terraces, sawtooth roofs, dormers and garden pavilions. Building ends have entrances and displays, with contrasting lower walls and varied upper windows. Eight original illustrated business signs share one small atlas, alongside the existing orbital travel posters. Ships have bevelled hull edges, painted panels, wing trim, a reflective canopy and inset engine details. See the [art direction and future visual standards](docs/art-direction.md).
+The city uses a shared illustrated atlas with sixteen distinct material surfaces: ivory/rose plaster, sage/indigo timber, brick, limestone, glazed and decorative ceramic, copper, slate, curved clay tiles, walnut, cobbles, patterned floor tiles and textiles. Narrow individual properties combine these into six construction families: brick bay-window houses, indigo timber noodle shops, stone arcades, teal ceramic cafés, shuttered rose townhouses and sage workshops. Each family changes opening shapes, framing, frontage depth and roof construction, with staggered heights and setbacks. Eight original illustrated business signs share a separate small atlas, alongside the existing orbital travel posters. Ships have bevelled hull edges, painted panels, wing trim, a reflective canopy and inset engine details. See the [art direction](docs/art-direction.md) and [material asset/prompt](docs/texture-assets.md).
 
 By default, the sky follows your **device's local timezone and civil clock**: dawn around 06:00, daylight, golden evening around 18:00, then blue moonlight, stars and warm occupied windows. Choose **Auto**, **Dawn**, **Day**, **Golden hour** or **Night** in the terminal or pause panel to override the appearance. Your preference is saved on the device and stays independent of your wingmate's choice. Transitions in Auto are gradual and catch up after returning to the tab. These fixed dawn/dusk times are an artistic cycle, **not season/location-based astronomical sunrise or sunset**; no location permission is needed. Multiplayer pilots in different timezones can see different skies without affecting gameplay synchronization.
 

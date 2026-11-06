@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { surfaceMaterial, prepareSurfaceGeometry, SURFACE } from './surfaces.js';
+import { MATERIAL } from './materialAtlas.js';
 import { FLIGHT_SPEED, courseFrame, worldPosition } from './course.js';
 
 export const COLORS = { cyan: 0x19cddd, magenta: 0xef657b, orange: 0xffa342 };
@@ -68,9 +69,9 @@ function vendingMachine(group, side, x, z, color) {
 function makeTree(group, x, z, scale = 1) {
   const groundY = -3.7;
   box(group, x, groundY + 1.25 * scale, z, .34 * scale, 2.5 * scale, .34 * scale, 0x806851);
-  const crown = outlined(new THREE.IcosahedronGeometry(1.5 * scale, 0), 0x5f947c);
+  const crown = outlined(new THREE.IcosahedronGeometry(1.5 * scale, 0), 0x5f947c, SURFACE.metal);
   crown.position.set(x, groundY + 3.9 * scale, z); group.add(crown);
-  const crown2 = outlined(new THREE.IcosahedronGeometry(1.05 * scale, 0), 0x75a487);
+  const crown2 = outlined(new THREE.IcosahedronGeometry(1.05 * scale, 0), 0x75a487, SURFACE.metal);
   crown2.position.set(x + .45 * scale, groundY + 5.1 * scale, z + .2 * scale); group.add(crown2);
 }
 
@@ -96,7 +97,8 @@ function bake(group) {
     if (!object.geometry) return;
     let geometry = object.geometry.clone();
     if (!object.isLineSegments) {
-      const seed = object.material.userData.surfaceSeed ?? ((Math.sin(object.position.x * 13.7 + object.position.y * 7.1 + object.position.z * 3.3) * 43758.5453) % 1 + 1) % 1;
+      const origin = object.matrixWorld.elements;
+      const seed = object.material.userData.surfaceSeed ?? ((Math.sin(origin[12] * 13.7 + origin[13] * 7.1 + origin[14] * 3.3 + (group.userData.materialSeed ?? 0) * 19.17) * 43758.5453) % 1 + 1) % 1;
       prepareSurfaceGeometry(geometry, object.material.userData.surface ?? 0, seed);
     }
     geometry.applyMatrix4(object.matrixWorld);
@@ -257,169 +259,292 @@ function addCable(group, z, y, sag = 0) {
   box(group, 16, y, z, 12, .08, .08, 0x456368);
 }
 
-// Facades are assembled in their own frame: +X points back into the house,
-// Z runs across its frontage. The same authored detail faces both approaches.
-function endFacade(group, x, z, end, width, height, identity, index) {
-  const face = new THREE.Group();
-  const trim = identity === 3 ? 0x8ca6a0 : 0xe7d8b7;
-  const accent = accents[(identity + index) % accents.length];
-  box(face, -.09, -2.45, 0, .18, 3.1, width, accent, false, identity === 3 ? SURFACE.metal : SURFACE.timber);
-  box(face, -.17, -.78, 0, .34, .24, width + .3, trim);
-  // Off-centre door, transom, broad shop glazing and a generous canopy read
-  // at flight speed, where a row of tiny identical windows becomes noise.
-  const door = -width * .3;
-  window(face, 1, -.2, -2.25, door, 0x284953, 1.35, 2.75);
-  box(face, -.38, -2.55, door + .42, .08, .32, .08, 0xe1b65b, false, SURFACE.metal);
-  window(face, 1, -.2, -2.2, width * .12, 0x4b7372, width * .42, 2.4);
-  awning(face, 1, -.2, -.48, width * .1, accent, width * .58);
-  sign(face, 1, -.08, .75, 0, accent, width * .75, 1.05, index + identity);
-  const floors = Math.max(1, Math.floor((height - 6) / 3.5));
-  for (let floor = 0; floor < floors; floor++) {
-    const y = 3.0 + floor * 3.5;
-    if (identity === 3) {
-      window(face, 1, 0, y, 0, 0x477580, width * .78, 1.9);
-    } else {
-      const count = identity === 1 ? 3 : 2;
-      for (let col = 0; col < count; col++) {
-        const slot = (col - (count - 1) / 2) * width * (count === 3 ? .27 : .43);
-        window(face, 1, 0, y, slot, 0x365e69, width * (count === 3 ? .16 : .24), identity === 4 ? 2.2 : 1.8);
-        if (identity === 0 || identity === 5) for (const shutter of [-1, 1])
-          box(face, -.13, y, slot + shutter * width * .155, .15, 1.9, width * .065, accent, false, SURFACE.timber);
-      }
-      if (identity === 2 || identity === 4) {
-        box(face, -.45, y - 1.1, 0, .9, .22, width * .76, trim);
-        box(face, -.85, y - .52, 0, .1, .82, width * .76, accent, false, SURFACE.metal);
-        for (const slot of [-.27, .1, .29]) box(face, -.58, y - .42, slot * width, .5, .45, width * .17, 0x638568);
-      }
-    }
-  }
-  for (const corner of [-1, 1]) box(face, -.06, height / 2 - 2.3, corner * (width / 2 - .16), .22, height - 3.5, .32, trim);
-  face.rotation.y = end > 0 ? Math.PI / 2 : -Math.PI / 2;
-  face.position.set(x, 0, z); group.add(face);
+// A frontage is authored in a local frame: -X faces the street, Z runs across
+// the wall. Individual properties share construction rules, not a window grid.
+const families = [
+  { name: 'brick-maison', wall: MATERIAL.terracottaBrick, base: MATERIAL.wood, roof: MATERIAL.slate, trim: 0xf3dcb0, accent: 0x426a74, height: 19 },
+  { name: 'noodle-house', wall: MATERIAL.ivory, base: MATERIAL.indigoBoards, roof: MATERIAL.terracottaRoof, trim: 0x775037, accent: 0xc5613f, height: 11 },
+  { name: 'stone-arcade', wall: MATERIAL.limestone, base: MATERIAL.limestone, roof: MATERIAL.copper, trim: 0xffe9bf, accent: 0x3c7775, height: 15 },
+  { name: 'tile-cafe', wall: MATERIAL.ivory, base: MATERIAL.tealTile, roof: MATERIAL.copper, trim: 0xffe6ae, accent: 0x2e6972, height: 17 },
+  { name: 'rose-townhouse', wall: MATERIAL.rose, base: MATERIAL.coralTile, roof: MATERIAL.slate, trim: 0xffe6bf, accent: 0x425772, height: 17 },
+  { name: 'garden-workshop', wall: MATERIAL.sageBoards, base: MATERIAL.terracottaBrick, roof: MATERIAL.slate, trim: 0xe6d5ae, accent: 0x476a60, height: 12 }
+];
+
+function facadeWindow(g, y, z, width, height, trim, { bay = false, lattice = false, shutters = false, accent = 0x456778 } = {}) {
+  const project = bay ? .7 : .1;
+  box(g, -project / 2, y, z, project, height + .25, width + .28, trim, false, SURFACE.metal);
+  box(g, -project - .025, y, z, .07, height, width, 0x315364, false, SURFACE.window);
+  box(g, -project - .08, y, z, .08, height, .07, trim, false, SURFACE.metal);
+  box(g, -project - .08, y + height * .15, z, .08, .07, width, trim, false, SURFACE.metal);
+  if (lattice) for (const dy of [-.3, .35]) box(g, -project - .09, y + dy * height, z, .07, .055, width, trim, false, SURFACE.metal);
+  box(g, -project * .55, y - height / 2 - .2, z, project + .32, .2, width + .5, trim, false, SURFACE.metal);
+  if (bay) box(g, -.42, y + height / 2 + .24, z, 1.08, .23, width + .65, accent, false, SURFACE.metal);
+  if (shutters) for (const side of [-1, 1]) box(g, -.16, y, z + side * (width * .5 + .28), .19, height + .08, .42, 0xf5f5f5, false, MATERIAL.indigoBoards);
 }
 
-function pitchedRoof(group, x, y, z, width, depth, rise, color) {
+function balcony(g, y, z, width, trim, planted = false) {
+  box(g, -.7, y, z, 1.5, .22, width + .45, trim, false, SURFACE.metal);
+  box(g, -1.32, y + .96, z, .07, .08, width + .3, 0x344951, false, SURFACE.metal);
+  for (let i = 0; i <= 4; i++) box(g, -1.32, y + .49, z + (i / 4 - .5) * (width + .2), .055, .9, .055, 0x344951, false, SURFACE.metal);
+  for (const side of [-1, 1]) box(g, -.74, y + .96, z + side * (width + .3) / 2, 1.2, .07, .07, 0x344951, false, SURFACE.metal);
+  if (planted) {
+    box(g, -1.12, y + .55, z + width * .24, .45, .4, width * .4, 0xcf8660, false, SURFACE.metal);
+    box(g, -1.12, y + .87, z + width * .24, .5, .35, width * .43, 0x557e50, false, SURFACE.metal);
+  }
+}
+
+function archFace(g, x, bottom, z, width, height, color, kind = SURFACE.metal) {
+  const r = width / 2, shoulder = height - r;
+  const shape = new THREE.Shape();
+  shape.moveTo(-r, 0); shape.lineTo(r, 0); shape.lineTo(r, shoulder);
+  shape.absarc(0, shoulder, r, 0, Math.PI, false); shape.lineTo(-r, 0);
+  const geometry = new THREE.ShapeGeometry(shape, 6); geometry.rotateY(-Math.PI / 2);
+  const mesh = new THREE.Mesh(geometry, toon(color, kind));
+  mesh.position.set(x, bottom, z); g.add(mesh);
+}
+
+function archedOpening(g, bottom, z, width, height, trim, glass = false) {
+  archFace(g, -.08, bottom, z, width + .42, height + .3, trim);
+  archFace(g, -.1, bottom + .13, z, width, height, glass ? 0x345c65 : 0x263d45, glass ? SURFACE.window : SURFACE.metal);
+  if (glass) {
+    box(g, -.14, bottom + height * .42, z, .07, height * .78, .08, trim, false, SURFACE.metal);
+    box(g, -.14, bottom + height * .58, z, .07, .08, width, trim, false, SURFACE.metal);
+  }
+}
+
+function clothCanopy(g, y, z, width, fabric) {
+  const canopy = box(g, -.83, y, z, 1.7, .12, width, 0xffffff, false, fabric);
+  canopy.rotation.z = -.15;
+  box(g, -1.62, y - .25, z, .09, .42, width, 0xffffff, false, fabric);
+  for (const side of [-1, 1]) box(g, -.82, y - .2, z + side * (width - .15) / 2, 1.65, .065, .065, 0x475c5b, false, SURFACE.metal);
+}
+
+function shopDoor(g, y, z, width, height, trim, timber = false) {
+  box(g, -.11, y, z, .22, height + .25, width + .3, trim, false, SURFACE.metal);
+  box(g, -.25, y, z, .06, height, width, timber ? 0xffffff : 0x324f57, false, timber ? MATERIAL.wood : SURFACE.window);
+  box(g, -.3, y - .25, z + width * .3, .06, .38, .06, 0xe2b665, false, SURFACE.metal);
+}
+
+function paperLantern(g, y, z) {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.36, 8, 4), toon(0xe77d45, SURFACE.lamp));
+  mesh.scale.set(.85, 1.35, 1); mesh.position.set(-.85, y, z); g.add(mesh);
+  box(g, -.85, y + .51, z, .28, .14, .28, 0x463b37, false, SURFACE.metal);
+  box(g, -.4, y + .65, z, .9, .06, .06, 0x463b37, false, SURFACE.metal);
+}
+
+function authoredFrontage(g, width, h, identity, label, variant) {
+  const f = families[identity], edge = width * (variant % 2 ? .27 : .31);
+  const floorCount = Math.max(1, Math.floor((h - 7) / 3.8));
+  if (identity === 0) {
+    // Tall brick merchant house: projecting sash bays and continuous iron balconies.
+    shopDoor(g, -2.05, -edge, 1.6, 3.45, f.trim);
+    facadeWindow(g, -2, width * .13, width * .43, 2.9, f.trim);
+    clothCanopy(g, -.22, width * .12, width * .49, MATERIAL.stripedCanvas);
+    sign(g, 1, -.12, 1.0, 0, f.accent, width * .82, .86, label);
+    for (let floor = 0; floor < floorCount; floor++) {
+      const y = 3.7 + floor * 3.8;
+      for (const z of [-edge, edge]) facadeWindow(g, y, z, width * .22, 2.45, f.trim, { bay: (floor + variant) % 2 === 0, accent: f.accent });
+      if (floor === variant % 2) balcony(g, y - 1.6, 0, width * .88, f.trim);
+    }
+    for (const z of [-width / 2 + .13, width / 2 - .13]) box(g, -.12, h / 2 - 1.9, z, .24, h - 4.3, .26, f.trim, false, SURFACE.metal);
+  } else if (identity === 1) {
+    // Low timber noodle house: open counter, hanging fabric, lanterns and a
+    // single ribbon of upper lattice glazing beneath deep eaves.
+    shopDoor(g, -2.2, -edge, 1.5, 3.1, f.trim, true);
+    box(g, -.1, -1.8, width * .12, .2, 2.7, width * .47, 0x243b3a, false, SURFACE.metal);
+    box(g, -.7, -2.55, width * .12, 1.35, .24, width * .52, 0xffffff, false, MATERIAL.wood);
+    for (let panel = 0; panel < 3; panel++) box(g, -.53, -.63, width * .12 + (panel - 1) * width * .16, .08, 1.12, width * .15, 0xffffff, false, MATERIAL.floralCanvas);
+    for (const z of [-width * .43, width * .42]) paperLantern(g, .35, z);
+    sign(g, 1, -.07, 1.4, 0, f.accent, width * .62, .86, 6);
+    facadeWindow(g, 3.8, 0, width * .73, 1.7, f.trim, { lattice: true });
+    for (const z of [-width * .48, 0, width * .48]) box(g, -.13, 1.4, z, .23, h - 2.2, .22, f.trim, false, SURFACE.metal);
+    box(g, -.1, 2.35, 0, .24, .25, width, f.trim, false, SURFACE.metal);
+  } else if (identity === 2) {
+    // Honey-stone arcade: genuinely different round-headed openings and
+    // muscular piers instead of rectangles with a different wall color.
+    for (const z of [-width * .3, width * .3]) {
+      archedOpening(g, -3.88, z, width * .33, 4.6, f.trim, true);
+      clothCanopy(g, -.85, z, width * .34, MATERIAL.floralCanvas);
+    }
+    sign(g, 1, -.18, 1.25, 0, f.accent, width * .74, .7, label);
+    for (let floor = 0; floor < floorCount; floor++) {
+      const bottom = 2.75 + floor * 3.8;
+      for (const z of [-width * .27, width * .27]) archedOpening(g, bottom, z, width * .24, 2.75, f.trim, true);
+      if (floor === 0) balcony(g, bottom - .25, 0, width * .82, f.trim, true);
+    }
+    for (const z of [-width * .48, 0, width * .48]) box(g, -.24, -1.65, z, .48, 4.5, .38, f.trim, false, SURFACE.metal);
+  } else if (identity === 3) {
+    // Teal ceramic café: broad wraparound glazing and a rising Art Deco fin.
+    shopDoor(g, -2.2, -edge, 1.45, 3.1, f.trim);
+    facadeWindow(g, -2.05, width * .12, width * .5, 2.65, f.trim);
+    clothCanopy(g, -.23, width * .1, width * .57, MATERIAL.stripedCanvas);
+    for (let floor = 0; floor < floorCount; floor++) {
+      const y = 3.25 + floor * 3.65;
+      facadeWindow(g, y, width * .12, width * .61, 1.8, f.accent);
+      box(g, -.14, y - 1.17, width * .12, .25, .22, width * .72, f.trim, false, SURFACE.metal);
+    }
+    box(g, -.3, h / 2 - 1.3, -width * .36, .6, h + 1.5, width * .14, 0xffffff, false, MATERIAL.tealTile);
+    sign(g, 1, -.65, 2.1, -width * .36, f.accent, width * .22, 2.65, label);
+    for (const offset of [0, .6, 1.2]) box(g, -.1, h - 3.4 + offset, width * .1, .23, .22, width * (.8 - offset * .3), f.trim, false, SURFACE.metal);
+  } else if (identity === 4) {
+    // Rose pension: decorative tiled dado, narrow paired shutters, flower
+    // boxes and one front balcony rather than a whole repeated iron grid.
+    shopDoor(g, -2.15, 0, 1.8, 3.2, f.trim, true);
+    for (const z of [-edge, edge]) facadeWindow(g, -1.85, z, width * .18, 2.25, f.trim, { shutters: true });
+    sign(g, 1, -.1, .65, 0, f.accent, width * .55, .85, 7);
+    for (let floor = 0; floor < floorCount; floor++) {
+      const y = 3.7 + floor * 3.8;
+      for (const z of [-width * .25, width * .25]) facadeWindow(g, y, z, width * .19, 2.5, f.trim, { shutters: true });
+      if (floor === 0) balcony(g, y - 1.5, 0, width * .75, f.trim, true);
+    }
+    if (variant % 3 !== 2) clothCanopy(g, -.05, 0, 2.6, MATERIAL.floralCanvas);
+  } else {
+    // Sage workshop: wide garage and asymmetric pedestrian entry, structural
+    // battens, a long studio clerestory and a tiled porch.
+    box(g, -.12, -1.65, -width * .15, .24, 4.2, width * .54, 0xffffff, false, MATERIAL.indigoBoards);
+    for (let slat = 0; slat < 4; slat++) box(g, -.26, -3.35 + slat * .92, -width * .15, .08, .06, width * .54, f.trim, false, SURFACE.metal);
+    shopDoor(g, -2.2, width * .34, 1.45, 3.1, f.trim);
+    facadeWindow(g, 3.35, 0, width * .79, 1.9, f.trim, { lattice: true });
+    sign(g, 1, -.1, .92, 0, f.accent, width * .73, .8, 3);
+    for (const z of [-width * .46, width * .44]) box(g, -.19, h / 2 - 3, z, .32, h - 1.2, .2, f.trim, false, SURFACE.metal);
+    box(g, -.65, -3.87, width * .34, 1.5, .18, 2.2, 0xffffff, false, MATERIAL.encaustic);
+  }
+  // Strong cornice, shallow threshold, one lamp. Their forms remain legible
+  // at chase-camera distance; tiny random facade greebles were removed.
+  box(g, -.2, h - 4.08, 0, .5, .28, width + .3, f.trim, false, SURFACE.metal);
+  box(g, -.23, -3.85, 0, .5, .2, width + .2, f.trim, false, SURFACE.metal);
+  if (identity !== 1) {
+    box(g, -.65, .25, width * .44, .85, .07, .07, 0x344951, false, SURFACE.metal);
+    box(g, -1, -.1, width * .44, .28, .65, .34, 0xf6d395, false, SURFACE.lamp);
+  }
+}
+
+// The narrow service alleys have their own quieter end elevations. They
+// preserve each construction identity without duplicating the street's shop,
+// canopy, counter and balcony geometry three times around every property.
+function secondaryFrontage(g, width, h, identity, label, variant) {
+  const f = families[identity];
+  if (identity === 2) {
+    archedOpening(g, -3.86, -.15 * width, width * .42, 4.1, f.trim, true);
+  } else if (identity === 5) {
+    box(g, -.08, -2.05, 0, .16, 3.6, width * .62, 0xffffff, false, MATERIAL.wood);
+    box(g, -.19, -2.05, 0, .06, 3.6, .1, f.trim, false, SURFACE.metal);
+  } else {
+    shopDoor(g, -2.1, width * (variant % 2 ? .2 : -.2), width * .22, 3.3, f.trim, identity !== 3);
+    if (identity === 1) box(g, -.3, -.73, width * .2, .06, .85, width * .24, 0xffffff, false, MATERIAL.floralCanvas);
+  }
+  if (identity !== 5) sign(g, 1, -.05, .65, 0, f.accent, width * .62, .7, label);
+  const floors = Math.max(1, Math.floor((h - 7) / 4.1));
+  for (let floor = 0; floor < floors; floor++) {
+    const y = 3.6 + floor * 4.1;
+    if (identity === 2) {
+      archedOpening(g, y - 1.2, 0, width * .32, 2.7, f.trim, true);
+    } else if (identity === 1 || identity === 3 || identity === 5) {
+      facadeWindow(g, y, 0, width * .66, 1.6, f.trim, { lattice: identity === 1 });
+    } else {
+      for (const z of [-width * .25, width * .25]) facadeWindow(g, y, z, width * .2, 2.1, f.trim, { shutters: identity === 4 });
+    }
+  }
+  box(g, -.15, h - 4.08, 0, .36, .28, width + .3, f.trim, false, SURFACE.metal);
+}
+
+function pitchedRoof(group, x, y, z, width, depth, rise, kind) {
   const shape = new THREE.Shape();
   shape.moveTo(-width / 2, 0); shape.lineTo(0, rise); shape.lineTo(width / 2, 0); shape.closePath();
-  const roof = outlined(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, steps: 1 }), color, SURFACE.roof);
-  roof.position.set(x, y, z - depth / 2); group.add(roof);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, steps: 1 });
+  const roof = outlined(geo, 0xffffff, kind); roof.position.set(x, y, z - depth / 2); group.add(roof);
 }
 
-function districtRoof(group, x, y, z, width, identity, index) {
+function propertyRoof(g, x, y, z, w, d, identity) {
+  const f = families[identity];
   if (identity === 0 || identity === 4) {
-    pitchedRoof(group, x, y, z, width + .7, 25.8, identity === 0 ? 3.4 : 2.6, identity === 0 ? 0xb36d50 : 0x597b82);
-    // A pair of dormers breaks the long ridge without adding draw calls.
-    for (const dz of [-6, 6]) {
-      box(group, x, y + 1.6, z + dz, width * .58, 2.5, 2.6, 0xe2cdaa);
-      pitchedRoof(group, x, y + 2.85, z + dz, width * .65, 3, 1.25, 0x5d7a79);
+    pitchedRoof(g, x, y, z, w + .7, d + .7, identity === 4 ? 3.3 : 2.6, f.roof);
+    box(g, x + w * .25, y + 2.1, z + d * .27, 1, 4.2, 1.2, 0xffffff, false, MATERIAL.terracottaBrick);
+    box(g, x + w * .25, y + 4.28, z + d * .27, 1.3, .22, 1.5, f.trim, false, SURFACE.metal);
+    if (identity === 0) {
+      box(g, x, y + 1.4, z + d * .32, w * .53, 2.5, 2.6, 0xffffff, false, MATERIAL.rose);
+      pitchedRoof(g, x, y + 2.65, z + d * .32, w * .62, 3.1, 1.15, MATERIAL.copper);
+      for (const end of [-1, 1]) box(g, x, y + 1.7, z + d * .32 + end * 1.34, w * .32, 1.35, .07, 0x395b65, false, SURFACE.window);
     }
-    box(group, x + width * .26, y + 3, z + 8, 1.2, 5.3, 1.35, 0xb68e6a, false, SURFACE.brick);
-    box(group, x + width * .26, y + 5.7, z + 8, 1.5, .3, 1.65, 0xe2d1af);
-  } else if (identity === 3) {
-    for (const dz of [-8, 0, 8]) {
-      pitchedRoof(group, x, y, z + dz, width + .4, 7.6, 2.6, 0x65878b);
-      box(group, x, y + 1.05, z + dz + 3.83, width * .68, 1.25, .08, 0x5e97a0, false, SURFACE.window);
+  } else if (identity === 1) {
+    pitchedRoof(g, x, y, z, w + 1.4, d + 1.3, 2.35, f.roof);
+    for (const side of [-1, 1]) box(g, x + side * (w + .9) / 2, y + .08, z, .32, .24, d + 1.5, f.trim, false, SURFACE.metal);
+    box(g, x, y + 2.42, z, .24, .24, d + 1.6, f.trim, false, SURFACE.metal);
+  } else if (identity === 5) {
+    for (const dz of [-d * .27, d * .27]) {
+      pitchedRoof(g, x, y, z + dz, w + .7, d * .5, 2.1, MATERIAL.copper);
+      box(g, x, y + .85, z + dz + d * .25 + .02, w * .7, 1.35, .06, 0x4b7b7a, false, SURFACE.window);
     }
-    makeRooftopTank(group, x + width * .22, y + 3.7, z + 6, 0xb59c6d);
+    makeRooftopTank(g, x + w * .25, y + 1.15, z - d * .3, 0x9c7354);
   } else {
-    for (const end of [-1, 1]) {
-      box(group, x, y + .55, z + end * 12.3, width, 1.1, .3, 0xd8c39e);
-      if (identity === 1) for (let tier = 0; tier < 3; tier++)
-        box(group, x, y + .9 + tier * .65, z + end * 12.3, width * (1 - tier * .25), .65, .4, accents[index % accents.length]);
-    }
-    box(group, x + width * .15, y + 1.55, z - 3, width * .56, 3.1, 7, palette[(index + 4) % palette.length]);
-    pitchedRoof(group, x + width * .15, y + 3.1, z - 3, width * .62, 7.6, 1.4, 0x789186);
-    if (identity !== 1) {
-      for (const dz of [3, 8]) box(group, x, y + .45, z + dz, width * .8, .9, 1.7, 0x65845d);
-      for (const dx of [-1, 1]) box(group, x + dx * width * .35, y + 1.7, z + 6, .18, 3.4, .18, 0xc0a079, false, SURFACE.timber);
-      for (let dz = 3; dz <= 9; dz += 1.5) box(group, x, y + 3.4, z + dz, width * .84, .15, .18, 0xc0a079, false, SURFACE.timber);
+    box(g, x, y, z, w + .5, .35, d + .5, 0xffffff, false, f.roof);
+    for (const end of [-1, 1]) box(g, x, y + .6, z + end * d / 2, w, 1.2, .3, f.trim, false, SURFACE.metal);
+    for (const side of [-1, 1]) box(g, x + side * w / 2, y + .6, z, .3, 1.2, d, f.trim, false, SURFACE.metal);
+    if (identity === 2) {
+      box(g, x + w * .15, y + 1.25, z - d * .13, w * .6, 2.5, d * .5, 0xffffff, false, MATERIAL.ivory);
+      pitchedRoof(g, x + w * .15, y + 2.5, z - d * .13, w * .72, d * .6, 1.4, MATERIAL.terracottaRoof);
+      box(g, x - w * .3, y + .7, z + d * .3, 1.1, .9, d * .35, 0x65864f, false, SURFACE.metal);
+    } else {
+      box(g, x + w * .1, y + 1, z - d * .15, w * .64, 2, d * .58, 0xffffff, false, MATERIAL.tealTile);
+      box(g, x + w * .1, y + 2.15, z - d * .15, w * .7, .22, d * .64, f.trim, false, SURFACE.metal);
     }
   }
+}
+
+const streetPlans = [
+  [0, 1, 4, 2, 5, 3, 1, 0, 2, 4, 3, 5, 2, 1, 3, 0, 5, 4, 1, 3, 0, 2, 4, 5, 3, 4, 5, 1, 2, 0, 4, 0, 1, 5, 3, 2],
+  [5, 2, 1, 3, 0, 4, 3, 5, 4, 0, 1, 2, 0, 4, 5, 2, 3, 1, 4, 0, 2, 5, 1, 3, 2, 1, 0, 4, 5, 3, 1, 5, 2, 0, 4, 3]
+];
+
+export function propertyLayout(index, side, lot) {
+  const lane = side > 0 ? 1 : 0, address = index * 2 + lot;
+  const identity = streetPlans[lane][address % 36];
+  const variation = (index * 7 + lot * 3 + lane * 11) % 9;
+  return {
+    identity, variation,
+    width: 7.4 + (variation % 4) * .6,
+    depth: 12.8 + ((variation + lane) % 3) * .9,
+    z: (lot === 0 ? -9 : 8.5) + (lane ? 1.15 : -.25),
+    setback: [0, .65, .25, 1.05][(variation + identity) % 4],
+    height: families[identity].height + [-2.1, .7, 1.8, -.8, 0][(address + lane * 3) % 5]
+  };
 }
 
 function makeDistrict(index) {
-  const district = districtNames[index % districtNames.length];
   const g = new THREE.Group();
-  // Raised curbs and sidewalks establish a street scale beneath the flight
-  // path. The central lane remains open from -13 to +13 local units.
+  g.userData.familyKit = true; g.userData.materialSeed = index;
   for (const side of [-1, 1]) {
-    box(g, side * 15.8, -3.92, 0, 4.2, .45, 36, 0xbfc6b7, false, SURFACE.paving);
-    box(g, side * 13.75, -3.66, 0, .18, .18, 36, 0xf2e7ca);
-  }
-  const detail = index * 17 + 3;
-  for (const side of [-1, 1]) {
-    const x = side * (21 + (index % 3) * .8);
-    const w = 8 + (index % 2) * 2;
-    const h = 10 + (index * 7 + (side + 1) * 3) % 13;
-    const identity = index % 6;
-    const centre = (index % 2 - .5) * 8;
-    const finish = identity === 3 ? SURFACE.brick : SURFACE.plaster;
-    const wallColor = palette[(index + (side > 0 ? 3 : 0)) % palette.length];
-    box(g, x, h / 2 - 4, centre, w, h, 25, wallColor, true, finish);
-    // A substantial contrasting base wraps every face, with plaster above.
-    box(g, x, -2.5, centre, w + .1, 3, 25.1, accents[(index + 2) % accents.length], false, identity === 3 ? SURFACE.brick : SURFACE.plaster);
-    box(g, x, h - 3.85, centre, w + .6, .3, 25.5, 0xd7c9ac);
-    for (const end of [-1, 1]) endFacade(g, x, centre + end * 12.57, end, w, h, identity, index);
-    districtRoof(g, x, h - 3.7, centre, w, identity, index);
-    const front = x - side * (w / 2 + .04);
-    const centreZ = (index % 2 - .5) * 8;
-    // Deep cornices and grounded shop plinths give each facade weight.
-    box(g, front - side * .06, -2.7, centreZ, .24, 2.3, 24.8, accents[index % accents.length], false, SURFACE.timber);
-    box(g, front - side * .13, -.95, centreZ, .4, .22, 25, 0xe4d3ae);
-    box(g, front - side * .15, h - 4.2, centreZ, .5, .4, 25.3, 0xe8d7b1);
-    if (index % 2 === 0) for (const end of [-1, 1]) box(g, front - side * .1, h / 2 - 3, centreZ + end * 11.3, .28, h - 2, .45, 0xd4c29d);
-    // A lantern and its bracket are emissive geometry, no extra lights.
-    box(g, front - side * .55, 1.3, centreZ - 5, .9, .08, .08, INK, false, SURFACE.metal);
-    box(g, front - side * .95, .9, centreZ - 5, .36, .7, .42, 0xf5ce7d, false, SURFACE.lamp);
-    box(g, front - side * .95, 1.3, centreZ - 5, .5, .1, .55, INK, false, SURFACE.metal);
-    // Storefronts and patterned upper windows create a navigable close wall.
-    for (let floor = 0; floor < Math.floor((h - 3) / 3.4); floor++) {
-      const y = -2.1 + floor * 3.25;
-      for (let slot = -1; slot <= 1; slot++) window(g, side, floor === 0 ? front - side * .2 : front, y, (index % 2 - .5) * 8 + slot * 7.2, floor === 0 ? accents[(detail + slot + 5) % accents.length] : 0x3d606a, 1.35, 1.5);
-      if (floor > 0 && (floor + index) % 3 === 1) {
-        box(g, front - side * .32, y - .8, centreZ, .55, .3, 2.1, 0x9e6651, false, SURFACE.timber);
-        for (const dz of [-.65, 0, .65]) box(g, front - side * .34, y - .52, centreZ + dz, .5, .4, .52, 0x567d60);
-        box(g, front - side * .3, y - .98, (index % 2 - .5) * 8 + 1.6, .1, .12, 3.4, 0xd2b47d);
-        box(g, front - side * .3, y - .78, (index % 2 - .5) * 8 - .1, .1, .12, 3.4, 0xd2b47d);
+    box(g, side * 15.8, -3.92, 0, 4.2, .45, 36, 0xf8f1e4, false, MATERIAL.basalt);
+    box(g, side * 13.75, -3.66, 0, .18, .18, 36, 0xecd8b5, false, SURFACE.metal);
+    for (let lot = 0; lot < 2; lot++) {
+      const { identity, variation, width, depth, z, setback, height: h } = propertyLayout(index, side, lot);
+      const f = families[identity];
+      const x = side * (17.6 + width / 2 + setback);
+      // Each property has its own material and proportions. Ground-floor
+      // construction wraps the corners rather than ending at a pasted facade.
+      box(g, x, h / 2 - 4, z, width, h, depth, 0xffffff, true, f.wall);
+      box(g, x, -1.95, z, width + .08, 4.1, depth + .08, 0xffffff, false, f.base);
+      box(g, x, .16, z, width + .3, .22, depth + .3, f.trim, false, SURFACE.metal);
+      const front = new THREE.Group();
+      authoredFrontage(front, depth, h, identity, (index + lot + (side > 0 ? 3 : 0)) % 8, variation);
+      front.position.set(x - side * width / 2, 0, z); front.rotation.y = side > 0 ? 0 : Math.PI; g.add(front);
+      for (const end of [-1, 1]) {
+        const face = new THREE.Group();
+        secondaryFrontage(face, width, h, identity, (index + lot + (end < 0 ? 2 : 0)) % 8, variation);
+        // End-wall fittings are shallower in the narrow service alleys.
+        face.scale.x = .65;
+        face.position.set(x, 0, z + end * depth / 2); face.rotation.y = end > 0 ? Math.PI / 2 : -Math.PI / 2; g.add(face);
+      }
+      propertyRoof(g, x, h - 3.98, z, width, depth, identity);
+      // A small planting/bench at the property seam gives the lane a human
+      // scale without adding more street furniture to the flight envelope.
+      if (lot === 0) {
+        makeTree(g, side * 15.75, z + depth / 2 + 1.05, .66);
+        box(g, side * 16, -3.08, z + depth / 2 + 2.15, 1.15, .18, 2.15, 0xffffff, false, MATERIAL.wood);
       }
     }
-    sign(g, side, front, -1.0, (index % 2 - .5) * 8 - 1.8, accents[(detail + 2) % accents.length], 5.2, 1.05, index);
-    awning(g, side, front, -.15, (index % 2 - .5) * 8 + 1.3, accents[(detail + 4) % accents.length], 3.3);
-    makeAC(g, side, front, Math.min(h - 5.4, 8), (index % 2 - .5) * 8 - 2.4);
-    if (district === 'terrace' || district === 'old-town') {
-      box(g, front - side * .3, 2.2, (index % 2 - .5) * 8 + 3, .1, .12, 4.2, 0x7b9c91);
-      for (let p = -1; p <= 1; p++) box(g, front - side * .34, 2.9, (index % 2 - .5) * 8 + 3 + p * 1.5, .1, .9, .12, 0x7b9c91);
-    }
-    vendingMachine(g, side, side * 15.5, (index % 2 - .5) * 8 + 3.2, accents[(detail + 1) % accents.length]);
-    box(g, side * 12.8, -3.05, (index % 2 - .5) * 8 - 3.2, .42, 1.05, .42, 0xd4a54e);
-    // Fit the entire canopy between the curb and facade, including the
-    // narrower sidewalks beside the widest buildings.
-    const facadeX = Math.abs(x) - w / 2;
-    const treeScale = Math.min(.72 + (index % 3) * .12, (facadeX - 14.6) / 3);
-    if (district !== 'garden') makeTree(g, side * (14.2 + treeScale * 1.5), (index % 2 - .5) * 8 - 1.7, treeScale);
   }
-  // Every district has a signature piece visible from a few blocks away.
-  if (district === 'market') {
-    box(g, 0, 12.6, 0, 29, .28, .45, 0xd8bf82);
-    for (const x of [-11, -5.5, 0, 5.5, 11]) box(g, x, 11.8, 0, .12, 1.6, .12, 0x657b79);
-    addCable(g, -7, 15, 1.2);
-  } else if (district === 'highline') {
-    for (const side of [-1, 1]) {
-      box(g, side * 22, 10.5, 8, 10, 1.2, 3.2, 0xa4b6aa);
-      box(g, side * 22, 11.35, 8, 10.5, .16, 3.45, 0xe2c47f);
-    }
-  } else if (district === 'canal') {
-    for (const side of [-1, 1]) {
-      box(g, side * 9.5, -3.1, 0, .18, 1.6, 35, 0x7ea8a1);
-      box(g, side * 10.2, -2.45, 0, .16, .16, 35, 0xe7d6ae);
-    }
-    addCable(g, 7, 13, 1.8);
-  } else if (district === 'garden') {
-    for (const z of [-12, -4, 4, 12]) { makeTree(g, -15.7, z, .9); makeTree(g, 15.7, z + 1.5, .75); }
-  } else {
-    addCable(g, -11, 14.5, 1.3);
-    addCable(g, 10, 16.3, .8);
-  }
+  if (index % 3 === 0) addCable(g, -14, 14.5, 1.1);
   return bake(g);
 }
 

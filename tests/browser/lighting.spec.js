@@ -12,8 +12,10 @@ test('local sky transitions, textured city and long boosted views render on desk
   const samples = await page.evaluate(async () => {
     const { createScene } = await import('/src/lib/game/scene.js');
     const { surfaceLight } = await import('/src/lib/game/surfaces.js');
+    const { waitForMaterialAtlas } = await import('/src/lib/game/storefronts.js');
     let hour = 12;
     const world = createScene(document.querySelector('#view'), { clock: () => new Date(2026, 6, 10, hour) });
+    if (!await waitForMaterialAtlas()) throw new Error('Authored material atlas failed to load.');
     window.lightingLab = { world, setHour: value => { hour = value; } };
     world.renderer.info.autoReset = false;
     const result = [];

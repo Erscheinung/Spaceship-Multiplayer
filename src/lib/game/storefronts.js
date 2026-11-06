@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { surfaceLight } from './surfaces.js';
+import { MATERIAL_ATLAS_URL, prepareMaterialAtlas, emptyMaterialAtlas } from './materialAtlas.js';
 
 // An original, deliberately art-directed town identity, packed into one atlas.
 // This is shared GPU artwork with scene-level ownership, not per-shop textures.
@@ -13,7 +14,20 @@ const shops = [
   ['LUNAR NOODLE CLUB', 'HOT SOUP / COLD SPACE', '#7c4750', '#f3c687', 'cup'],
   ['THE STARLING HOTEL', 'A LIGHT LEFT ON FOR YOU', '#3b676b', '#f1d5a1', 'post']
 ];
-let owners = 0;
+let owners = 0, materialLoad = 0;
+let materialReady = Promise.resolve(false);
+export const waitForMaterialAtlas = () => materialReady;
+function loadMaterialArtwork() {
+  const generation = ++materialLoad;
+  materialReady = new Promise(resolve => {
+    new THREE.ImageLoader().load(MATERIAL_ATLAS_URL, source => {
+      if (generation !== materialLoad || owners === 0) { resolve(false); return; }
+      const texture = prepareMaterialAtlas(source);
+      surfaceLight.materials.value.dispose(); surfaceLight.materials.value = texture;
+      resolve(true);
+    }, undefined, () => resolve(false));
+  });
+}
 export function acquireStorefrontAtlas() {
   if (!surfaceLight.atlas.value) {
     const canvas=document.createElement('canvas'); canvas.width=512;canvas.height=512;
@@ -55,10 +69,11 @@ export function acquireStorefrontAtlas() {
     const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
     texture.anisotropy=2;surfaceLight.atlas.value=texture;
   }
-  owners++;
+  if (owners++ === 0) loadMaterialArtwork();
   let released=false;
   return ()=>{
     if(released)return;released=true;
-    if(--owners===0){surfaceLight.atlas.value.dispose();surfaceLight.atlas.value=null;}
+    if(--owners===0){surfaceLight.atlas.value.dispose();surfaceLight.atlas.value=null;
+      materialLoad++; surfaceLight.materials.value.dispose(); surfaceLight.materials.value=emptyMaterialAtlas();}
   };
 }
