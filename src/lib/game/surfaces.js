@@ -71,9 +71,10 @@ export function surfaceMaterial(color, kind = SURFACE.plaster, { baked = false, 
       float detailFade=1.0-smoothstep(.025,.13,max(fwidth(q.x),fwidth(q.y)));
       float surfaceValue=1.0;
       if(kind<.5) {
-        float wear=surfaceNoise(q*.48+seed*17.0);
-        float fine=surfaceHash(floor(q*35.0));
-        surfaceValue=.88+wear*.2+(fine-.5)*.06*detailFade;
+        // One broad, vertically stretched limewash field; no pixel grain or
+        // second noise evaluation across the city's large plaster surfaces.
+        float wash=surfaceNoise(q*vec2(.48,.19)+seed*17.0);
+        surfaceValue=.87+wash*.23;
       } else if(kind<1.5) {
         vec2 brick=q/vec2(1.05,.42); brick.x+=mod(floor(brick.y),2.0)*.5;
         float mortar=joint(brick,vec2(.025,.045));
@@ -84,11 +85,22 @@ export function surfaceMaterial(color, kind = SURFACE.plaster, { baked = false, 
         float grain=sin(q.y*14.0+surfaceNoise(q*vec2(3.0,.3))*5.0);
         surfaceValue=.88+grain*.055*detailFade;
         surfaceValue*=1.0-joint(q*vec2(2.0,.12),vec2(.025,.008))*.24;
-      } else if(kind<4.5) {
-        vec2 tile=q/(kind<3.5?vec2(1.4,.85):vec2(.7,.45));
+      } else if(kind<3.5) {
+        vec2 tile=q/vec2(1.4,.85);
         tile.x+=mod(floor(tile.y),2.0)*.5;
         surfaceValue=.96+(surfaceHash(floor(tile)+seed)-.5)*.16*detailFade;
         surfaceValue*=1.0-joint(tile,vec2(.018,.025))*.22;
+      } else if(kind<4.5) {
+        // Overlapping roof courses, distinct from pavement grout. Analytic
+        // lips suggest construction depth without bump-map texture fetches.
+        vec2 tile=q/vec2(.72,.58);
+        tile.x+=mod(floor(tile.y),2.0)*.5;
+        vec2 local=fract(tile), aa=max(fwidth(tile),vec2(.001));
+        float courseShadow=1.0-smoothstep(.04-aa.y,.19+aa.y,local.y);
+        float lip=smoothstep(.83-aa.y,.9+aa.y,local.y)*(1.0-smoothstep(.96-aa.y,1.0+aa.y,local.y));
+        float seam=1.0-smoothstep(.018-aa.x,.04+aa.x,min(local.x,1.0-local.x));
+        float tone=surfaceHash(floor(tile)+seed*17.0)-.5;
+        surfaceValue=.97+detailFade*(tone*.13-courseShadow*.23-seam*.12+lip*.09);
       } else if(kind<5.5) {
         float stripe=sin(q.x*9.0);
         diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.87,.8,.63),mix(.5,smoothstep(-.1,.1,stripe),detailFade)*.8);
@@ -115,6 +127,6 @@ export function surfaceMaterial(color, kind = SURFACE.plaster, { baked = false, 
       }
     `);
   };
-  material.customProgramCacheKey = () => `afterlight-surfaces-v2-${baked}-${world}`;
+  material.customProgramCacheKey = () => `afterlight-surfaces-v3-${baked}-${world}`;
   return material;
 }

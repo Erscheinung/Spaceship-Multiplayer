@@ -148,6 +148,20 @@ export function makeShip(id, selectedColor) {
   return group;
 }
 
+// Disconnected rays communicate an instantaneous burst, never a solid orb.
+export function makeImpactBurst(color) {
+  const points = [];
+  for (let i = 0; i < 14; i++) {
+    const y = 1 - 2 * (i + .5) / 14, angle = i * 2.399963;
+    const radius = Math.sqrt(1 - y * y);
+    const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius;
+    points.push(x * .52, y * .52, z * .52, x, y, z);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+  return new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: new THREE.Color(color).multiplyScalar(3), transparent: true, depthWrite: false }));
+}
+
 export function makeRock(seed) {
   const group = outlined(new THREE.IcosahedronGeometry(1, 0), 0xcb7459);
   const band = outlined(new THREE.TorusGeometry(.77, .09, 4, 12), 0xffd476);
@@ -243,6 +257,86 @@ function addCable(group, z, y, sag = 0) {
   box(group, 16, y, z, 12, .08, .08, 0x456368);
 }
 
+// Facades are assembled in their own frame: +X points back into the house,
+// Z runs across its frontage. The same authored detail faces both approaches.
+function endFacade(group, x, z, end, width, height, identity, index) {
+  const face = new THREE.Group();
+  const trim = identity === 3 ? 0x8ca6a0 : 0xe7d8b7;
+  const accent = accents[(identity + index) % accents.length];
+  box(face, -.09, -2.45, 0, .18, 3.1, width, accent, false, identity === 3 ? SURFACE.metal : SURFACE.timber);
+  box(face, -.17, -.78, 0, .34, .24, width + .3, trim);
+  // Off-centre door, transom, broad shop glazing and a generous canopy read
+  // at flight speed, where a row of tiny identical windows becomes noise.
+  const door = -width * .3;
+  window(face, 1, -.2, -2.25, door, 0x284953, 1.35, 2.75);
+  box(face, -.38, -2.55, door + .42, .08, .32, .08, 0xe1b65b, false, SURFACE.metal);
+  window(face, 1, -.2, -2.2, width * .12, 0x4b7372, width * .42, 2.4);
+  awning(face, 1, -.2, -.48, width * .1, accent, width * .58);
+  sign(face, 1, -.08, .75, 0, accent, width * .75, 1.05, index + identity);
+  const floors = Math.max(1, Math.floor((height - 6) / 3.5));
+  for (let floor = 0; floor < floors; floor++) {
+    const y = 3.0 + floor * 3.5;
+    if (identity === 3) {
+      window(face, 1, 0, y, 0, 0x477580, width * .78, 1.9);
+    } else {
+      const count = identity === 1 ? 3 : 2;
+      for (let col = 0; col < count; col++) {
+        const slot = (col - (count - 1) / 2) * width * (count === 3 ? .27 : .43);
+        window(face, 1, 0, y, slot, 0x365e69, width * (count === 3 ? .16 : .24), identity === 4 ? 2.2 : 1.8);
+        if (identity === 0 || identity === 5) for (const shutter of [-1, 1])
+          box(face, -.13, y, slot + shutter * width * .155, .15, 1.9, width * .065, accent, false, SURFACE.timber);
+      }
+      if (identity === 2 || identity === 4) {
+        box(face, -.45, y - 1.1, 0, .9, .22, width * .76, trim);
+        box(face, -.85, y - .52, 0, .1, .82, width * .76, accent, false, SURFACE.metal);
+        for (const slot of [-.27, .1, .29]) box(face, -.58, y - .42, slot * width, .5, .45, width * .17, 0x638568);
+      }
+    }
+  }
+  for (const corner of [-1, 1]) box(face, -.06, height / 2 - 2.3, corner * (width / 2 - .16), .22, height - 3.5, .32, trim);
+  face.rotation.y = end > 0 ? Math.PI / 2 : -Math.PI / 2;
+  face.position.set(x, 0, z); group.add(face);
+}
+
+function pitchedRoof(group, x, y, z, width, depth, rise, color) {
+  const shape = new THREE.Shape();
+  shape.moveTo(-width / 2, 0); shape.lineTo(0, rise); shape.lineTo(width / 2, 0); shape.closePath();
+  const roof = outlined(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, steps: 1 }), color, SURFACE.roof);
+  roof.position.set(x, y, z - depth / 2); group.add(roof);
+}
+
+function districtRoof(group, x, y, z, width, identity, index) {
+  if (identity === 0 || identity === 4) {
+    pitchedRoof(group, x, y, z, width + .7, 25.8, identity === 0 ? 3.4 : 2.6, identity === 0 ? 0xb36d50 : 0x597b82);
+    // A pair of dormers breaks the long ridge without adding draw calls.
+    for (const dz of [-6, 6]) {
+      box(group, x, y + 1.6, z + dz, width * .58, 2.5, 2.6, 0xe2cdaa);
+      pitchedRoof(group, x, y + 2.85, z + dz, width * .65, 3, 1.25, 0x5d7a79);
+    }
+    box(group, x + width * .26, y + 3, z + 8, 1.2, 5.3, 1.35, 0xb68e6a, false, SURFACE.brick);
+    box(group, x + width * .26, y + 5.7, z + 8, 1.5, .3, 1.65, 0xe2d1af);
+  } else if (identity === 3) {
+    for (const dz of [-8, 0, 8]) {
+      pitchedRoof(group, x, y, z + dz, width + .4, 7.6, 2.6, 0x65878b);
+      box(group, x, y + 1.05, z + dz + 3.83, width * .68, 1.25, .08, 0x5e97a0, false, SURFACE.window);
+    }
+    makeRooftopTank(group, x + width * .22, y + 3.7, z + 6, 0xb59c6d);
+  } else {
+    for (const end of [-1, 1]) {
+      box(group, x, y + .55, z + end * 12.3, width, 1.1, .3, 0xd8c39e);
+      if (identity === 1) for (let tier = 0; tier < 3; tier++)
+        box(group, x, y + .9 + tier * .65, z + end * 12.3, width * (1 - tier * .25), .65, .4, accents[index % accents.length]);
+    }
+    box(group, x + width * .15, y + 1.55, z - 3, width * .56, 3.1, 7, palette[(index + 4) % palette.length]);
+    pitchedRoof(group, x + width * .15, y + 3.1, z - 3, width * .62, 7.6, 1.4, 0x789186);
+    if (identity !== 1) {
+      for (const dz of [3, 8]) box(group, x, y + .45, z + dz, width * .8, .9, 1.7, 0x65845d);
+      for (const dx of [-1, 1]) box(group, x + dx * width * .35, y + 1.7, z + 6, .18, 3.4, .18, 0xc0a079, false, SURFACE.timber);
+      for (let dz = 3; dz <= 9; dz += 1.5) box(group, x, y + 3.4, z + dz, width * .84, .15, .18, 0xc0a079, false, SURFACE.timber);
+    }
+  }
+}
+
 function makeDistrict(index) {
   const district = districtNames[index % districtNames.length];
   const g = new THREE.Group();
@@ -257,18 +351,16 @@ function makeDistrict(index) {
     const x = side * (21 + (index % 3) * .8);
     const w = 8 + (index % 2) * 2;
     const h = 10 + (index * 7 + (side + 1) * 3) % 13;
-    box(g, x, h / 2 - 4, (index % 2 - .5) * 8, w, h, 25, palette[(index + (side > 0 ? 1 : 0)) % palette.length], true, index % 3 === 0 ? SURFACE.brick : SURFACE.plaster);
-    box(g, x, h - 3.65, (index % 2 - .5) * 8, w + .6, .52, 25.5, 0x536f72);
-    // End facades remain visible through turns and from above.
-    for (const end of [-1, 1]) {
-      const z = (index % 2 - .5) * 8 + end * 12.56;
-      for (let y = 0; y < h - 5; y += 3) for (const col of [-1, 0, 1]) {
-        box(g, x + col * w * .27, y, z, w * .15 + .14, 1.54, .1, 0x304651, false, SURFACE.metal);
-        box(g, x + col * w * .27, y, z + end * .065, w * .15 - .1, 1.3, .04, accents[(index + col + 7) % accents.length], false, SURFACE.window);
-        box(g, x + col * w * .27, y - .81, z + end * .08, w * .15 + .25, .12, .32, 0xe3d4b5);
-      }
-      box(g, x, h * .55 - 4, z, w, .35 + index % 3 * .2, .14, accents[(index + 3) % accents.length]);
-    }
+    const identity = index % 6;
+    const centre = (index % 2 - .5) * 8;
+    const finish = identity === 3 ? SURFACE.brick : SURFACE.plaster;
+    const wallColor = palette[(index + (side > 0 ? 3 : 0)) % palette.length];
+    box(g, x, h / 2 - 4, centre, w, h, 25, wallColor, true, finish);
+    // A substantial contrasting base wraps every face, with plaster above.
+    box(g, x, -2.5, centre, w + .1, 3, 25.1, accents[(index + 2) % accents.length], false, identity === 3 ? SURFACE.brick : SURFACE.plaster);
+    box(g, x, h - 3.85, centre, w + .6, .3, 25.5, 0xd7c9ac);
+    for (const end of [-1, 1]) endFacade(g, x, centre + end * 12.57, end, w, h, identity, index);
+    districtRoof(g, x, h - 3.7, centre, w, identity, index);
     const front = x - side * (w / 2 + .04);
     const centreZ = (index % 2 - .5) * 8;
     // Deep cornices and grounded shop plinths give each facade weight.
@@ -281,9 +373,9 @@ function makeDistrict(index) {
     box(g, front - side * .95, .9, centreZ - 5, .36, .7, .42, 0xf5ce7d, false, SURFACE.lamp);
     box(g, front - side * .95, 1.3, centreZ - 5, .5, .1, .55, INK, false, SURFACE.metal);
     // Storefronts and patterned upper windows create a navigable close wall.
-    for (let floor = 0; floor < Math.floor((h - 3) / 2.8); floor++) {
-      const y = -2.1 + floor * 2.65;
-      for (let slot = -1; slot <= 1; slot++) window(g, side, floor === 0 ? front - side * .2 : front, y, (index % 2 - .5) * 8 + slot * 3.1, floor === 0 ? accents[(detail + slot + 5) % accents.length] : 0x3d606a, 1.35, 1.5);
+    for (let floor = 0; floor < Math.floor((h - 3) / 3.4); floor++) {
+      const y = -2.1 + floor * 3.25;
+      for (let slot = -1; slot <= 1; slot++) window(g, side, floor === 0 ? front - side * .2 : front, y, (index % 2 - .5) * 8 + slot * 7.2, floor === 0 ? accents[(detail + slot + 5) % accents.length] : 0x3d606a, 1.35, 1.5);
       if (floor > 0 && (floor + index) % 3 === 1) {
         box(g, front - side * .32, y - .8, centreZ, .55, .3, 2.1, 0x9e6651, false, SURFACE.timber);
         for (const dz of [-.65, 0, .65]) box(g, front - side * .34, y - .52, centreZ + dz, .5, .4, .52, 0x567d60);
@@ -294,7 +386,6 @@ function makeDistrict(index) {
     sign(g, side, front, -1.0, (index % 2 - .5) * 8 - 1.8, accents[(detail + 2) % accents.length], 5.2, 1.05, index);
     awning(g, side, front, -.15, (index % 2 - .5) * 8 + 1.3, accents[(detail + 4) % accents.length], 3.3);
     makeAC(g, side, front, Math.min(h - 5.4, 8), (index % 2 - .5) * 8 - 2.4);
-    if (index % 3 === 0) makeRooftopTank(g, x + side * 1.7, h - 2.1, (index % 2 - .5) * 8, 0x879d95);
     if (district === 'terrace' || district === 'old-town') {
       box(g, front - side * .3, 2.2, (index % 2 - .5) * 8 + 3, .1, .12, 4.2, 0x7b9c91);
       for (let p = -1; p <= 1; p++) box(g, front - side * .34, 2.9, (index % 2 - .5) * 8 + 3 + p * 1.5, .1, .9, .12, 0x7b9c91);

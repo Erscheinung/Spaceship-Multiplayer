@@ -44,7 +44,7 @@ export function createScene(container, { clock } = {}) {
   const resize=()=>{const w=container.clientWidth,h=container.clientHeight;if(!w||!h)return;camera.aspect=w/h;portrait=camera.aspect<.85;camera.fov=portrait?78:65;camera.updateProjectionMatrix();renderer.setSize(w,h);composer.setSize(w,h);const ratio=renderer.getPixelRatio();antialias.uniforms.resolution.value.set(1/(w*ratio),1/(h*ratio));};
   const observer=new ResizeObserver(resize);observer.observe(container);resize();
   const look=new THREE.Vector3(), desired=new THREE.Vector3(), cameraUp=new THREE.Vector3();
-  return {scene,renderer,camera,resetCamera(){initialized=false;},render(time,player={x:0,z:7},dt=1/60,brutal=false){
+  return {scene,renderer,camera,setSkyPreset: atmosphere.setSkyPreset,resetCamera(){initialized=false;},render(time,player={x:0,z:7},dt=1/60,brutal=false){
     const frame=courseFrame(time*FLIGHT_SPEED-player.z), point=worldPosition(player.x,player.y ?? 0,player.z,time);
     city(time,player.z);ground.position.set(frame.x,-8,frame.z);clouds.position.set(frame.x,0,frame.z);
     const section=Math.floor((time*FLIGHT_SPEED-player.z)/2);

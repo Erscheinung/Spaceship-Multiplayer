@@ -35,6 +35,29 @@ test('damage grants invulnerability, co-op ends when last pilot dies, final stat
   sim.tick(); assert.equal(p.hp, 1); p.invulnerable = 0; sim.tick(); assert.equal(sim.state.over, true);
   const snapshot = sim.snapshot(); sim.tick(); assert.deepEqual(sim.state, snapshot);
 });
+
+test('rock contact reaches the visible wings without making the thin hull overly tall', () => {
+  const sim = new Simulation(); sim.spawnClock = Infinity;
+  const p = sim.state.players[0]; p.x = 0; p.y = 10; p.z = 8; p.invulnerable = 0; p.cooldown = 10;
+  const wingRock = { id: 50, x: 1.9, y: p.y + 0.25, z: p.z - 0.4, r: 0.65, hp: 2, speed: 0 };
+  sim.state.rocks = [wingRock]; sim.tick();
+  assert.equal(p.hp, 4); assert.equal(wingRock.hp, 0);
+
+  p.hp = 5; p.invulnerable = 0; p.cooldown = 10;
+  const highRock = { id: 51, x: p.x, y: p.y + 0.25 + 1.25, z: p.z - 0.4, r: 0.65, hp: 2, speed: 0 };
+  sim.state.rocks = [highRock]; sim.tick();
+  assert.equal(p.hp, 5); assert.equal(highRock.hp, 2);
+});
+
+test('swept rock collision catches a boosted pass while the ship changes altitude', () => {
+  const sim = new Simulation(); sim.spawnClock = Infinity;
+  const p = sim.state.players[0]; p.x = 0; p.y = 10; p.z = 8; p.vy = 180; p.boost = 58; p.invulnerable = 0; p.cooldown = 10;
+  const rock = { id: 52, x: 0, y: 11.67, z: 7.117, r: 0.65, hp: 2, speed: 0 };
+  sim.state.rocks = [rock]; sim.setInput(0, { x: 0, z: 0, turbo: true, lift: true });
+  sim.tick();
+  assert.equal(p.hp, 4); assert.equal(rock.hp, 0);
+});
+
 test('one downed co-op pilot does not end the run', () => {
   const sim = new Simulation(); sim.state.players[0].hp = 0; sim.tick(); assert.equal(sim.state.over, false);
   sim.state.players[1].hp = 0; sim.tick(); assert.equal(sim.state.over, true);

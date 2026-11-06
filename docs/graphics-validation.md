@@ -49,3 +49,24 @@ Thousands of dependency/cache files had macOS cloud-placeholder flags, preventin
 The isolated network harness now navigates to a real loopback-served HTTP response rather than a synthetic fulfilled document. A controlled probe changing only that fixture restored peer launch within five seconds; the API stub, signaling options and permission grant stayed the same. The intentional 404 avoids mounting a second game renderer. This keeps the local address-space behavior faithful; see [Chrome’s local-network guidance](https://developer.chrome.com/docs/modern-web-guidance/guides/security/local-network-access). Production networking was unchanged.
 
 Physical phones, Safari/iOS GPU frame pacing and real public-network/VPN conditions were not tested. The earlier UI test's abrupt browser-close recovery timing was inconsistent; the UI integration now checks explicit departure, while the separate network harness closes the real transport and verifies same-peer recovery with injected jitter/loss. This update does not establish browser-process termination timing on every platform.
+
+## City charm, presets and contact follow-up — November 7, 2026
+
+Astra's context was compacted before this iteration. Astra implemented architectural identities, end facades, roof tiles, quieter limewash and radial impact sparks; the configured implementation workers owned local appearance controls and swept rock contact. The primary accepted their focused validation reports and checked the resulting application without reviewing their code.
+
+Inspected [day](screenshots/charm-day.png), [banked golden-hour turn](screenshots/charm-golden-turn.png), [night](screenshots/charm-night.png), [portrait](screenshots/charm-portrait.png), actual boosted [desktop](screenshots/charm-gameplay-desktop.png) / [portrait](screenshots/charm-gameplay-portrait.png) gameplay, and the [portrait pause controls](screenshots/charm-pause-portrait.png). Roof silhouettes, shop entrances and contrasting wall bases are visible from the chase camera. The preset control fits the pause panel; switching it keeps the simulation paused. Auto remains the default, with local storage for overrides and independent appearance per pilot.
+
+The expanded static district pool has 84,180 triangles versus 73,788 previously, retaining the baked batch structure. Roof/plaster changes add no textures, lights or passes. An extra limewash noise field was removed after the first performance investigation.
+
+The same M4 Metal renderer comparison was repeated with a longer window: 240 frames per view, 60 warmup frames and 180 measured frames, at 1280 × 800 / DPR 1. The initial short runs showed substantial system variation in both builds. These paired longer measurements are useful budget checks, not evidence that the new shader is faster:
+
+| View | Before median / p95 | Final median / p95 | Before / final calls |
+| --- | --- | --- | --- |
+| Day street | 3.9 / 10.2 ms | 3.7 / 7.9 ms | 88 / 88 |
+| Night street | 3.6 / 5.4 ms | 2.9 / 3.6 ms | 88 / 88 |
+| Boost through turn | 3.8 / 5.6 ms | 4.1 / 5.5 ms | 84 / 84 |
+| High night skyline | 3.5 / 7.0 ms | 3.7 / 5.9 ms | 89 / 89 |
+
+Visible triangles increased approximately 4–6% in these views; texture count remains 15 and geometry counts remain 73–81. No shader/page errors occurred. Short native gameplay samples at 1440 × 900 and 402 × 874, including four seconds of boost/climb/descent, had median animation-frame intervals of 16.7 ms and p95 of 16.8 / 16.7 ms respectively, with no horizontal overflow. These are desktop measurements with a portrait viewport, not physical phone benchmarks.
+
+Validation: all 44 unit tests pass, Svelte check reports zero errors/warnings, and the Vercel production build succeeds. Four focused Chromium checks pass: solo pause/resume, mobile controls/layout, desktop/portrait/landscape camera framing, and the final clock/material/long-view rendering check. The preset worker additionally verified rendered day/night/dawn values, saved selection after reload, shared menu/pause choice and Auto restoration. Rock regressions cover visible wing contact, thin vertical clearance and a fast boosted altitude crossing. Multiplayer transport was not changed or rerun in this follow-up; physical Safari/iOS and phone GPU performance remain unverified.

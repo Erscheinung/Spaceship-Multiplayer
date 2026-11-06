@@ -2,15 +2,37 @@ import * as THREE from 'three';
 import { surfaceLight } from './surfaces.js';
 
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+// The preset clock values are deliberately fixed so a pilot can compare the
+// same art direction across devices. Auto is the only mode that reads the
+// device's civil clock.
+export const LIGHTING_PRESETS = Object.freeze({
+  auto: Object.freeze({ label: 'Auto', hour: null }),
+  dawn: Object.freeze({ label: 'Dawn', hour: 6 }),
+  day: Object.freeze({ label: 'Day', hour: 12 }),
+  golden: Object.freeze({ label: 'Golden hour', hour: 18 }),
+  night: Object.freeze({ label: 'Night', hour: 0 })
+});
+export const LIGHTING_PRESET_OPTIONS = Object.freeze(Object.entries(LIGHTING_PRESETS).map(([value, option]) => ({ value, ...option })));
+export const LIGHTING_PRESET_STORAGE_KEY = 'neon-wing.lighting-preset';
+export function normalizeLightingPreset(value) { return Object.hasOwn(LIGHTING_PRESETS, value) ? value : 'auto'; }
+
+function presetDate(date, preset) {
+  const mode = normalizeLightingPreset(preset);
+  if (mode === 'auto') return date;
+  const fixed = new Date(date.getTime());
+  fixed.setHours(LIGHTING_PRESETS[mode].hour, 0, 0, 0);
+  return fixed;
+}
 // Civil-clock art direction, deliberately independent of simulation and location.
 // getHours uses the device timezone and its DST rules. No location permission.
-export function localLighting(date = new Date()) {
-  const hour = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+export function localLighting(date = new Date(), preset = 'auto') {
+  const clockDate = presetDate(date, preset);
+  const hour = clockDate.getHours() + clockDate.getMinutes() / 60 + clockDate.getSeconds() / 3600;
   const elevation = Math.sin((hour - 6) * Math.PI / 12);
   const day = smooth(-.14, .18, elevation);
   const gold = (1 - smooth(.08, .5, Math.abs(elevation))) * day;
   const angle = (hour - 6) * Math.PI / 12;
-  return { hour, day, night: 1 - day, gold, elevation, direction: [Math.cos(angle) * .85, elevation, -.45] };
+  return { hour, day, night: 1 - day, gold, elevation, direction: [Math.cos(angle) * .85, elevation, -.45], preset: normalizeLightingPreset(preset) };
 }
 
 export function createAtmosphere(scene, hemisphere, sun, bloom, clock = () => new Date()) {
@@ -61,11 +83,16 @@ export function createAtmosphere(scene, hemisphere, sun, bloom, clock = () => ne
   const dayHorizon=new THREE.Color(0xc8e1d5), nightHorizon=new THREE.Color(0x3b4269), sunset=new THREE.Color(0xf0ae78);
   const warmSun=new THREE.Color(0xffb572), noonSun=new THREE.Color(0xfff0d2), moonSun=new THREE.Color(0x9db9ed);
   const lightDirection=new THREE.Vector3(), warmGround=new THREE.Color(0x686879), dayGround=new THREE.Color(0x8b9f96);
-  let lastSecond=-1, lighting;
+  let lastSecond=-1, lighting, lightingPreset='auto';
+  function setLightingPreset(preset) {
+    const next = normalizeLightingPreset(preset);
+    if (next !== lightingPreset) { lightingPreset = next; lastSecond = -1; }
+    return lightingPreset;
+  }
   function update(camera, point) {
     const date=clock(), second=Math.floor(date.getTime()/1000);
     if(second!==lastSecond){
-      lastSecond=second; lighting=localLighting(date);
+      lastSecond=second; lighting=localLighting(date, lightingPreset);
       const {day,night,gold,direction}=lighting;
       surfaceLight.night.value=night; uniforms.night.value=night; uniforms.gold.value=gold;
       uniforms.sunDirection.value.set(...direction).normalize();
@@ -88,5 +115,5 @@ export function createAtmosphere(scene, hemisphere, sun, bloom, clock = () => ne
     sun.position.copy(point).addScaledVector(lightDirection,70);sun.target.position.copy(point);
     return lighting;
   }
-  return { update, sky };
+  return { update, sky, setSkyPreset: setLightingPreset, setLightingPreset, getLightingPreset: () => lightingPreset };
 }

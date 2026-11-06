@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { localLighting } from '../src/lib/game/atmosphere.js';
+import { LIGHTING_PRESET_OPTIONS, localLighting, normalizeLightingPreset } from '../src/lib/game/atmosphere.js';
 import { prepareSurfaceGeometry, SURFACE } from '../src/lib/game/surfaces.js';
 
 const at = (hour, minute = 0) => new Date(2026, 6, 10, hour, minute);
@@ -18,6 +18,24 @@ test('local civil time gives readable noon, night and continuous dawn/dusk', () 
     assert.ok(light.direction.every(Number.isFinite));
     assert.equal(light.day + light.night, 1);
   }
+});
+
+test('lighting presets use fixed local civil hours and reject unknown storage values', () => {
+  assert.deepEqual(LIGHTING_PRESET_OPTIONS.map(option => option.label), ['Auto', 'Dawn', 'Day', 'Golden hour', 'Night']);
+  assert.equal(normalizeLightingPreset('not-a-preset'), 'auto');
+  const morning = localLighting(at(2), 'dawn');
+  const noon = localLighting(at(23, 45), 'day');
+  const golden = localLighting(at(2), 'golden');
+  const night = localLighting(at(13), 'night');
+  assert.equal(morning.hour, 6);
+  assert.equal(noon.hour, 12);
+  assert.equal(golden.hour, 18);
+  assert.equal(night.hour, 0);
+  assert.equal(morning.preset, 'dawn');
+  assert.equal(noon.preset, 'day');
+  assert.equal(golden.preset, 'golden');
+  assert.equal(night.preset, 'night');
+  assert.equal(localLighting(at(12), 'not-a-preset').preset, 'auto');
 });
 
 test('surface face coordinates preserve physical dimensions through baking', () => {

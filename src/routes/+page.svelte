@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { SHIP_COLORS, DIFFICULTIES } from '$lib/game/settings.js';
+  import { LIGHTING_PRESET_OPTIONS, LIGHTING_PRESET_STORAGE_KEY, normalizeLightingPreset } from '$lib/game/atmosphere.js';
   import { FLIGHT_SPEED } from '$lib/game/course.js';
   import { TiltInput } from '$lib/game/TiltInput.js';
   import { MusicController } from '$lib/audio/MusicController.js';
@@ -12,6 +13,7 @@
   let steeringBoost = false, steeringPointer = null;
   let music, musicMuted = false, musicBlocked = false;
   let recovering = false, tiltEnabled = false, tiltBusy = false, tiltAttempt = 0;
+  let lightingPreset = 'auto';
   $: paused = recovering || flags.some(Boolean);
   $: me = host ? 0 : 1;
   $: playing = screen === 'game';
@@ -19,6 +21,7 @@
 
   onMount(() => {
     let disposed = false;
+    lightingPreset = readLightingPreset();
     const preventGameSelection = e => {
       const target=e.target;
       if(target?.closest?.('input, textarea, [contenteditable], .room-code'))return;
@@ -67,8 +70,20 @@
     if (next?.over) { clearDamageFeedback(); releaseFlightControls(); music?.pause(); }
   }
   function initEngine() {
-    try { engine = new Engine(canvas, { onHud: updateHud, onStats: stats => { telemetry = stats; }, onPause: togglePause, onError: fail }); ready = true; }
+    try { engine = new Engine(canvas, { onHud: updateHud, onStats: stats => { telemetry = stats; }, onPause: togglePause, onError: fail, lightingPreset }); ready = true; }
     catch (e) { ready = false; error = `WebGL could not start. Enable hardware acceleration and reload. ${e.message}`; }
+  }
+  function readLightingPreset() {
+    try {
+      const storage = globalThis.localStorage;
+      return normalizeLightingPreset(storage?.getItem(LIGHTING_PRESET_STORAGE_KEY));
+    } catch { return 'auto'; }
+  }
+  function setLightingPreset(value) {
+    const next = normalizeLightingPreset(value);
+    lightingPreset = next;
+    try { globalThis.localStorage?.setItem(LIGHTING_PRESET_STORAGE_KEY, next); } catch { /* private browsing/storage denial is harmless */ }
+    engine?.setLightingPreset?.(next);
   }
   function fail(message) { error = message; busy = false; status = ''; replayPending = false; clearDamageFeedback(); music?.pause(); if (playing) { flags = [true, true]; engine?.setPaused(true); releaseFlightControls(); } }
   function start(settings = {difficulty, colors:[shipColor,'coral']}) {
@@ -215,6 +230,9 @@
             <p class="setup-note">{difficulty==='brutal' ? 'No aim assist. Line up in height and direction. Double damage.' : difficulty==='easy' ? 'A gentler flight with assisted aim.' : 'Faster threats, assisted aim. Stay on the move.'}</p>
             <label for="ship-color">YOUR SHIP COLOR</label>
             <select id="ship-color" bind:value={shipColor} style:border-left={`6px solid ${SHIP_COLORS[shipColor]}`} onchange={e=>engine?.applyColors([e.currentTarget.value,'coral'])} disabled={busy}>{#each Object.keys(SHIP_COLORS) as color}<option value={color}>{color.toUpperCase()}</option>{/each}</select>
+            <label for="lighting-preset">TIME OF DAY</label>
+            <select id="lighting-preset" value={lightingPreset} onchange={e => setLightingPreset(e.currentTarget.value)}>{#each LIGHTING_PRESET_OPTIONS as option}<option value={option.value}>{option.label}</option>{/each}</select>
+            {#if lightingPreset === 'auto'}<p class="setup-note">Auto follows your device’s local time.</p>{/if}
           </div>
         {/if}
         {#if screen === 'lobby'}
@@ -273,6 +291,7 @@
         <button class="music-toggle pause-music-toggle" class:muted={musicMuted} type="button" aria-pressed={musicMuted} aria-label={musicMuted ? 'Unmute music' : 'Mute music'} onclick={toggleMusic}><span aria-hidden="true">{musicMuted ? '♫̸' : '♫'}</span> {musicMuted ? 'MUSIC OFF' : 'MUSIC ON'}</button>
         {#if musicBlocked && !musicMuted}<p class="music-note" role="status">Music playback was blocked. Resume to try again.</p>{/if}
 <div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='tilt'}<button type="button" class="tilt-enable" disabled={tiltBusy} onclick={tiltEnabled ? ()=>tilt.calibrate() : enableTilt}>{tiltBusy ? 'ALLOW MOTION ACCESS…' : tiltEnabled ? 'CALIBRATE TILT' : 'ENABLE TILT'}</button>{/if}{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
+        <div class="control-settings"><label for="pause-lighting-preset">TIME OF DAY</label><select id="pause-lighting-preset" value={lightingPreset} onchange={e => setLightingPreset(e.currentTarget.value)}>{#each LIGHTING_PRESET_OPTIONS as option}<option value={option.value}>{option.label}</option>{/each}</select>{#if lightingPreset === 'auto'}<p class="setup-note">Auto follows your device’s local time.</p>{/if}</div>
         <div class="end-stats"><div><small>SURVIVED</small><strong>{time(hud?.time)}</strong></div><div><small>TEAM SCORE</small><strong>{hud?.score ?? 0}</strong></div></div>
         {#if !hud?.over && !error}<button class="primary full" onclick={() => togglePause()} disabled={recovering || !flags[me]}>{recovering ? 'RESTORING LINK…' : flags[me] ? 'RESUME FLIGHT' : 'WAITING FOR WINGMATE'} <span>→</span></button>{/if}
         {#if hud?.over}<button class="primary full" onclick={playAgain} disabled={replayPending || (!solo && !network?.connection?.open)}>{replayPending ? 'WAITING FOR WINGMATE…' : 'PLAY AGAIN'} <span>↻</span></button>{/if}

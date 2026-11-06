@@ -10,10 +10,31 @@ export const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z, (a.y ?? 0) - (b.y ?? 0));
 // Include the ship's travel between steps so a fast pass cannot skip an orb.
 const pickupRadius = 2.4; // Ship hull plus the visible pickup ring.
+// Collision envelope follows the visible delta hull, excluding the exhaust
+// flames. `y` and `z` offsets put the envelope around the canopy and fuselage.
+const shipHull = { x: 1.75, y: 0.45, z: 1.6, offsetY: 0.25, offsetZ: -0.4 };
 function sweptDistance(start, end, point) {
   const dx = end.x - start.x, dy = end.y - start.y, dz = end.z - start.z;
   const t = clamp(((point.x - start.x) * dx + ((point.y ?? 0) - start.y) * dy + (point.z - start.z) * dz) / Math.max(1e-8, dx * dx + dy * dy + dz * dz), 0, 1);
   return Math.hypot(point.x - start.x - dx * t, (point.y ?? 0) - start.y - dy * t, point.z - start.z - dz * t);
+}
+function sweptRockContact(playerStart, playerEnd, rockStart, rockEnd, rockRadius) {
+  const xRadius = shipHull.x + rockRadius;
+  const yRadius = shipHull.y + rockRadius;
+  const zRadius = shipHull.z + rockRadius;
+  // Scale into a unit sphere, then sweep the relative player/rock segment.
+  // This catches fast approaches and respects the ship's broad, flat shape.
+  const start = {
+    x: (playerStart.x - rockStart.x) / xRadius,
+    y: (playerStart.y + shipHull.offsetY - (rockStart.y ?? 0)) / yRadius,
+    z: (playerStart.z + shipHull.offsetZ - rockStart.z) / zRadius
+  };
+  const end = {
+    x: (playerEnd.x - rockEnd.x) / xRadius,
+    y: (playerEnd.y + shipHull.offsetY - (rockEnd.y ?? 0)) / yRadius,
+    z: (playerEnd.z + shipHull.offsetZ - rockEnd.z) / zRadius
+  };
+  return sweptDistance(start, end, { x: 0, y: 0, z: 0 }) <= 1;
 }
 const player = (id, active) => ({ id, active, x: id ? 4 : -4, z: 8, y: 0, vy: 0, vx: 0, boost: 0, travel: 0, hp: 5, rate: 0, spread: 0, cooldown: 0, invulnerable: 2 });
 
@@ -91,6 +112,7 @@ export class Simulation {
         }
       }
     }
+    const rocksBefore = s.rocks.map(r => ({ x: r.x, y: r.y ?? 0, z: r.z }));
     for (const r of s.rocks) r.z += r.speed * dt;
     for (const b of s.bullets) {
       b.y = (b.y ?? 0) + (b.vy ?? 0) * dt; b.x += b.vx * dt; b.z += b.vz * dt; b.life -= dt;
@@ -107,8 +129,9 @@ export class Simulation {
     }
     for (const p of s.players) {
       if (!p.active || p.hp <= 0) continue;
-      for (const r of s.rocks) {
-        if (r.hp > 0 && p.invulnerable <= 0 && distance(p, r) < r.r + 0.65) {
+      for (let i = 0; i < s.rocks.length; i++) {
+        const r = s.rocks[i];
+        if (r.hp > 0 && p.invulnerable <= 0 && sweptRockContact(positionsBefore[p.id], p, rocksBefore[i], r, r.r)) {
           p.hp = this.solo ? 5 : Math.max(0, p.hp - this.difficulty.damage); p.invulnerable = 1.5; r.hp = 0; this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y);
         }
       }

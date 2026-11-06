@@ -1,16 +1,19 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
-import { makeShip, makeRock, makePickup, makeTower, disposeObject, COLORS } from './procedural.js';
+import { makeShip, makeRock, makePickup, makeTower, makeImpactBurst, disposeObject, COLORS } from './procedural.js';
 import { worldPosition, courseFrame, FLIGHT_SPEED, cityObstacles } from './course.js';
 import { SHIP_COLORS } from './settings.js';
+import { normalizeLightingPreset } from './atmosphere.js';
 import { Simulation, STEP, CRUISE_SPEED, advanceFlight } from './simulation.js';
 
 const REMOTE_INTERPOLATION_DELAY = 0.1;
 const REMOTE_MAX_EXTRAPOLATION = 0.2;
 
 export class Engine {
-  constructor(container, { onHud, onPause, onError, onStats }) {
+  constructor(container, { onHud, onPause, onError, onStats, lightingPreset = 'auto' }) {
     this.world = createScene(container); this.onHud = onHud; this.onPause = onPause; this.onStats = onStats;
+    this.lightingPreset = normalizeLightingPreset(lightingPreset);
+    this.setLightingPreset(this.lightingPreset);
     this.objects = new Map(); this.keys = new Set(); this.touch = { x: 0, z: 0 }; this.actions = { boost:false, lift:false }; this.state = null;
     this.orientationBasis = new THREE.Matrix4(); this.frameRight = new THREE.Vector3(); this.frameUp = new THREE.Vector3(); this.frameBack = new THREE.Vector3();
     this.bulletDirection = new THREE.Vector3(); this.bulletForward = new THREE.Vector3(0, 0, 1); this.bulletRotation = new THREE.Quaternion();
@@ -32,12 +35,18 @@ export class Engine {
     this.world.renderer.domElement.addEventListener('webglcontextlost', this.contextLost);
     this.frame = this.frame.bind(this); this.last = performance.now(); this.raf = requestAnimationFrame(this.frame);
   }
+  setLightingPreset(preset) {
+    this.lightingPreset = normalizeLightingPreset(preset);
+    const setPreset = this.world?.setSkyPreset ?? this.world?.setLightingPreset;
+    setPreset?.call(this.world, this.lightingPreset);
+    return this.lightingPreset;
+  }
   start({ host = true, solo = false, network = null, settings = {} }) {
     cancelAnimationFrame(this.raf);
     clearInterval(this.inputTimer);
     this.network = network; this.localId = host ? 0 : 1; this.mode = host ? 'host' : 'client'; this.sim = host ? new Simulation({ solo, settings }) : null;
     if (this.sim) this.sim.state.players.forEach(p => { p.boost = CRUISE_SPEED; });
-    this.settings = settings; this.applyColors(settings.colors); this.world.resetCamera(); this.state = this.sim?.state ?? null; this.accumulator = 0; this.keys.clear(); this.paused = false;
+    this.settings = settings; this.applyColors(settings.colors); this.setLightingPreset(this.lightingPreset); this.world.resetCamera(); this.state = this.sim?.state ?? null; this.accumulator = 0; this.keys.clear(); this.paused = false;
     this.lastHudTime = null; this.previousPlayers = null; this.snapshotClock = 0; this.hudClock = 0; this.remoteInputTime = performance.now();
     this.predictedPlayer = null; this.predictionSteps = []; this.remoteSnapshots = []; this.remotePresentationTime = 0; this.latestSnapshotArrival = 0; this.latestSnapshotTime = 0; this.presentationOffset = { x: 0, y: 0, z: 0 }; this.statsClock = 0; this.statsFrames = 0;
     this.inputTimer = setInterval(() => { if (this.mode === 'client') this.network?.send({ type: 'input', input: this.paused ? { x: 0, z: 0 } : this.input() }); }, 1000 / 30);
@@ -227,9 +236,7 @@ export class Engine {
     sync(this.state?.rocks ?? [], 'r', r => makeRock(r.seed), (o, r) => { o.scale.setScalar(r.r); o.rotateX(time*r.spin);o.rotateY(time*.3); });
     sync(this.state?.pickups ?? [], 'p', p => makePickup(p.type), o => { o.rotateX(time);o.rotateY(time*1.5);o.rotateZ(Math.PI/4); o.position.y += Math.sin(time * 4) * 0.08; });
     sync(this.state?.bullets ?? [], 'b', b => new THREE.Mesh(new THREE.SphereGeometry(0.17, 5, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(SHIP_COLORS[this.state?.settings?.colors[b.owner]] ?? COLORS.cyan).multiplyScalar(5) })), (o, b) => { o.scale.set(1, 1, 3); o.quaternion.multiply(this.bulletRotation.setFromUnitVectors(this.bulletForward,this.bulletDirection.set(b.vx,b.vy ?? 0,b.vz).normalize())); });
-    sync(this.state?.effects ?? [], 'e', e => {
-      const o = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(COLORS[e.color]).multiplyScalar(3), wireframe: true, transparent: true, depthWrite: false })); return o;
-    }, (o, e) => { o.scale.setScalar((0.45 - e.life) * 7 + 0.4); o.material.opacity = e.life / 0.45; o.rotateY(time*2); });
+    sync(this.state?.effects ?? [], 'e', e => makeImpactBurst(COLORS[e.color]), (o, e) => { o.scale.setScalar((0.45 - e.life) * 7 + 0.4); o.material.opacity = e.life / 0.45; o.rotateY(time*2); });
     for (const [key, object] of this.objects) if (!alive.has(key)) { disposeObject(object); this.objects.delete(key); }
   }
   destroy() {
