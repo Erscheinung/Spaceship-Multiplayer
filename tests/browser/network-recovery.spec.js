@@ -5,14 +5,17 @@ import { test, expect } from '@playwright/test';
 test('disposable state tolerates jitter/loss and the same pilots recover a closed transport', async ({ browser }) => {
   const context = await browser.newContext({ permissions: ['local-network-access'] });
   await context.route('**/api/ice', route => route.fulfill({ json: { iceServers: [] } }));
-  await context.route('**/network-harness', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Network harness</title>' }));
   await context.route(/\/@id\/.*env\/dynamic\/public/, route => route.fulfill({ contentType: 'application/javascript', body: 'export const env = { PUBLIC_PEER_HOST: "127.0.0.1", PUBLIC_PEER_PORT: "9000", PUBLIC_PEER_PATH: "/", PUBLIC_PEER_SECURE: "false" };' }));
   const host = await context.newPage(), guest = await context.newPage();
   const errors = [];
   for (const page of [host, guest]) page.on('pageerror', error => errors.push(error.message));
   try {
     for (const page of [host, guest]) {
-      await page.goto('/network-harness');
+      // Use a real loopback HTTP document: synthetic fulfilled documents can
+      // lose loopback address-space behavior and stall local ICE negotiation.
+      // The served 404 is intentionally sufficient and does not mount the game.
+      const document = await page.goto('/network-harness');
+      expect(document.status()).toBe(404);
       await page.evaluate(async () => {
         const { PeerSession } = await import('/src/lib/net/PeerSession.js');
         window.received = []; window.starts = 0; window.recoveries = []; window.failures = []; window.pauseFlags = [];

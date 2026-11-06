@@ -1,0 +1,17 @@
+# Afterlight Skyway visual direction
+
+A warm, inhabited orbital city seen from a little independent courier ship. The city should feel like a place with businesses, routines and history. The visual target is illustrated architecture with material depth and intentional detail, rather than a collection of random colored boxes.
+
+The Gemini concepts in the user's local Sunset Town `docs/concept` directory informed the approach: `city-old-town-street-gemini-2026-11-04.png` for occupied windows and layered storefronts, `texture-swatches-gemini-2026-11-03.png` for restrained material wear, and `city-docks-dusk-gemini-2026-11-06.jpg` for cool evening atmosphere with warm working lights. These are reference images, not shipped game assets.
+
+Buildings combine plaster and selected masonry, substantial cornices, shop plinths, inset framed panes, timber, striped awnings and small balcony planters. The local business kit has eight original illustrated fascias: Afterlight Post, Comet Coffee, Nightjar Radio, Moss & Moon, Ring Road Repairs, Blue Hour Books, Lunar Noodle Club and The Starling Hotel. Their pictograms, typography, pinstripes and short lines are composed into [one 512 × 512 atlas](screenshots/graphics-storefronts.png). Existing travel posters remain part of the city's identity.
+
+Ships retain their clear delta silhouette and pilot colors, with bevelled hull edges, clean panel seams, wing trim, a reflective framed canopy, engine mouths and an asymmetric courier marking. Keep wear restrained on the ship so it remains the visual focus.
+
+The material kit in `surfaces.js` supplies physically scaled plaster, staggered masonry, timber, paving, roof, fabric, window, lamp, painted metal and fascia finishes. Face coordinates are captured before merging; road coordinates follow absolute route distance. Derivative filtering fades small patterns during distant/fast travel. Texture variation supports construction; it must not become the main subject.
+
+Lighting follows the **device's local civil clock**, including its timezone/DST rules. Dawn is centered on 06:00 and dusk on 18:00 with gradual blue-hour/golden transitions. This is an art-directed clock cycle, not astronomical sunrise/sunset: latitude, season and geolocation are not inferred from a timezone. Different-zone multiplayer pilots may see different skies; simulation and network time are unaffected. Production lighting refreshes once per second and catches up after tab suspension.
+
+A single sky sphere supplies a sun disk, halo and restrained angular rays; the opposite moon and sparse stars appear at night. These are sky radiance, not volumetric shafts between buildings. Architecture naturally occludes them. One directional shadow light and the existing hemisphere/bloom/FXAA pipeline remain; night windows and lanterns use emissive surfaces, not individual lights.
+
+Keep the existing resolution cap, shadow map size, instance counts and rolling updates. The atlas is shared with scene-level ownership and disposed when the last scene closes. Other materials/geometry keep their existing object ownership. Do not add per-frame textures, extra fullscreen effects or individual window lights. Validate actual gameplay and inspect day, golden-hour, dawn, night and portrait captures; measure against the previous renderer on the same device. Software WebGL establishes correctness and relative cost, not phone/Safari GPU performance.

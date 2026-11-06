@@ -65,6 +65,8 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
+For cloud-synced Documents folders, ensure dependency files are fully downloaded. If the dev watcher reloads unchanged source/generated files mid-test, use a fully local checkout outside that synced folder; see the [validation environment notes](docs/graphics-validation.md).
+
 The test runner starts a **development-only** local PeerJS signaling server on port 9000 and Vite on port 5173. Keep those ports free, or select another Vite port with `E2E_PORT=5174 npm run test:e2e`. This server is never used by the deployed app. Headless tests use software WebGL; browser downloads require internet, but the tests do not rely on PeerJS cloud. Screenshots are written to `test-results/` (git-ignored).
 
 ## Deploy to Vercel
@@ -147,7 +149,10 @@ src/
       course.js                Shared deterministic route and tower geometry
       simulation.js            Pure host-authoritative fixed-step game rules
       procedural.js            Batched outlined architecture, ships, rocks, cores
-      scene.js                 Chase camera, daylight and subtle bloom
+      scene.js                 Chase camera, local sky and subtle bloom
+      atmosphere.js            Device-local civil-clock sun, moon and sky
+      surfaces.js              Filtered material shader kit and metric coordinates
+      storefronts.js           Original illustrated local-business atlas
       road.js                  Incremental road, curb and guard-field buffers
       Engine.js                Game loop, input, snapshots and visual interpolation
 tests/
@@ -165,7 +170,9 @@ Road and curb geometry uses a rolling 160-segment buffer: advancing recycles onl
 
 The composer uses FXAA edge smoothing and restrained bloom limited to bright effects. No dark overlay covers active gameplay. No models or texture assets need downloading. Optional Google Fonts enhance the terminal typography; system fallbacks remain usable offline.
 
-The Three.js engine is dynamically imported on mount so server rendering never touches browser APIs. The engine chunk is approximately 561 kB minified (144 kB gzip); Vite may emit its standard 500 kB chunk advisory. Pixel ratio is capped at 1.5 to limit bloom cost. Full cross-device GPU performance and public-internet NAT traversal still need validation on the target devices.
+See [the visual direction](docs/art-direction.md) for the material kit, local businesses, sky behavior and future art standards.
+
+The Three.js engine is dynamically imported on mount so server rendering never touches browser APIs. The engine chunk is approximately 596 kB minified (156 kB gzip); Vite may emit its standard 500 kB chunk advisory. Pixel ratio is capped at 1.5 to limit bloom cost. Full cross-device GPU performance and public-internet NAT traversal still need validation on the target devices.
 
 Previous city-edition verification: Svelte checks, ten simulation tests, four Chromium integration tests and the Vercel build passed. For the mechanics update, sixteen simulation tests and a build completed before the user requested no further testing. Final networking/UI adjustments have not been rerun through checks; no browser/device testing was performed for this update. Dependency audit reports three low advisories through SvelteKit/cookie and three moderate advisories through the test-only PeerServer/Express/qs chain; normal `npm audit fix` did not clear these. See `agents.md` for the exact verification record and follow-up scope.
 
@@ -214,3 +221,24 @@ Focused validation: three collision/unlimited-hull tests, Svelte check, producti
 Replaced full road/skyline rebuilds with incremental rolling updates and reused per-frame transform objects to reduce allocation. Added an explicit tap for Safari tilt permission, canceled stale permission requests, normalized calibration angle seams, and made sensor smoothing independent of event frequency. Suppressed long-press selection and callouts across the game UI while retaining room-code editing/copying.
 
 No tests, checks, builds or browser runs performed, preserving the earlier no-testing constraint. Physical Safari/iOS performance and tilt operation remain unverified.
+
+
+## Local-time illustrated materials — November 2026
+
+The city now uses a purpose-designed material kit: gently weathered plaster, selected staggered masonry, timber shopfronts, paving, roof finishes, striped awnings, framed windows and warm lanterns. Eight original illustrated business signs share one small atlas, alongside the existing orbital travel posters. Ships have bevelled hull edges, painted panels, wing trim, a reflective canopy and inset engine details. See the [art direction and future visual standards](docs/art-direction.md).
+
+The sky follows your **device's local timezone and civil clock**: dawn around 06:00, daylight, golden evening around 18:00, then blue moonlight, stars and warm occupied windows. Transitions are gradual and catch up after returning to the tab. These fixed dawn/dusk times are an artistic cycle, **not season/location-based astronomical sunrise or sunset**; no location permission is needed. Multiplayer pilots in different timezones can see different skies without affecting gameplay synchronization.
+
+Sun/halo/rays and the opposite moon live in a single sky shader behind the city, so buildings occlude them. There are no extra fullscreen effects or individual window lights. The city retains its existing merged districts, skyline instances, rolling road buffers, 1.5 pixel-ratio cap and 1024 shadow map. Face textures stay attached while banking; road patterns follow route distance. Fine pattern contrast fades at distance to reduce boost shimmer.
+
+[Daylight](docs/screenshots/graphics-day.png) · [Golden hour](docs/screenshots/graphics-golden.png) · [Night](docs/screenshots/graphics-night.png) · [Portrait night](docs/screenshots/graphics-night-mobile.png)
+
+A repeatable isolated renderer sample is available after starting the dev server:
+
+```sh
+GRAPHICS_URL=http://127.0.0.1:5173 node scripts/benchmark-graphics.mjs
+# Software WebGL instead of the local GPU:
+GRAPHICS_URL=http://127.0.0.1:5173 node scripts/benchmark-graphics.mjs --software
+```
+
+The report identifies the renderer and includes CPU-to-GPU-completion timing, draw calls, triangles and resident texture/geometry counts. See [the local validation record](docs/graphics-validation.md) for the baseline comparison and device limits.

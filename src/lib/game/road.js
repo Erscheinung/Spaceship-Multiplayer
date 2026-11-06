@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { surfaceMaterial, SURFACE } from './surfaces.js';
 import { courseFrame } from './course.js';
 
 // Road geometry lives in world space. Crossing a segment only recycles the
@@ -7,10 +8,14 @@ export function createRoad(scene) {
   const count = 160;
   const positions = new THREE.BufferAttribute(new Float32Array(count * 18), 3).setUsage(THREE.DynamicDrawUsage);
   const normals = new THREE.BufferAttribute(new Float32Array(count * 18), 3).setUsage(THREE.DynamicDrawUsage);
+  const surfaceUv = new THREE.BufferAttribute(new Float32Array(count * 12), 2).setUsage(THREE.DynamicDrawUsage);
+  const surfaceData = new THREE.BufferAttribute(new Float32Array(count * 12), 2);
+  for (let i = 0; i < count * 6; i++) { surfaceData.setXY(i, SURFACE.paving, .4); }
   const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('surfaceUv', surfaceUv); geometry.setAttribute('surfaceData', surfaceData);
   geometry.setAttribute('position', positions); geometry.setAttribute('normal', normals);
-  const road = new THREE.Mesh(geometry, new THREE.MeshToonMaterial({ color: 0x769397, side: THREE.DoubleSide }));
-  road.receiveShadow = true; road.frustumCulled = false; scene.add(road);
+  const road = new THREE.Mesh(geometry, surfaceMaterial(0x667f88, SURFACE.paving, { baked: true }));
+  road.material.side = THREE.DoubleSide; road.receiveShadow = true; road.frustumCulled = false; scene.add(road);
   const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(.45, .6, 1), new THREE.MeshToonMaterial({ color: 0xe3c56f }), count * 2);
   rails.castShadow = true; rails.receiveShadow = true;
   const guards = new THREE.InstancedMesh(new THREE.BoxGeometry(.1, 5, 1), new THREE.MeshBasicMaterial({ color: 0x19cddd, transparent: true, opacity: .06, depthWrite: false }), count * 2);
@@ -36,6 +41,8 @@ export function createRoad(scene) {
       offset(first, -13.8, -4, a); offset(first, 13.8, -4, b);
       offset(last, -13.8, -4, c); offset(last, 13.8, -4, d);
       const base = slot * 18;
+      surfaceUv.array.set([-13.8,distance,13.8,distance,-13.8,distance+2,13.8,distance,13.8,distance+2,-13.8,distance+2],slot*12);
+      surfaceUv.addUpdateRange(slot*12,12);
       a.toArray(positions.array, base); b.toArray(positions.array, base + 3); c.toArray(positions.array, base + 6);
       b.toArray(positions.array, base + 9); d.toArray(positions.array, base + 12); c.toArray(positions.array, base + 15);
       normal.subVectors(b, a).cross(edge.subVectors(c, a)).normalize();
@@ -55,7 +62,7 @@ export function createRoad(scene) {
       }
       for (const mesh of instances) mesh.instanceMatrix.addUpdateRange(slot * 32, 32);
     }
-    positions.needsUpdate = true; normals.needsUpdate = true;
+    positions.needsUpdate = true; normals.needsUpdate = true; surfaceUv.needsUpdate = true;
     for (const mesh of instances) mesh.instanceMatrix.needsUpdate = true;
   };
 }

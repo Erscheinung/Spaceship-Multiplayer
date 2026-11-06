@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { surfaceMaterial, prepareSurfaceGeometry, SURFACE } from './surfaces.js';
 import { FLIGHT_SPEED, courseFrame, worldPosition } from './course.js';
 
 export const COLORS = { cyan: 0x19cddd, magenta: 0xef657b, orange: 0xffa342 };
@@ -10,11 +11,11 @@ export const palette = [0xf1e6cf, 0xd8d1b9, 0x9db8aa, 0xc9a889, 0xb8c9bb, 0xd7b8
 const accents = [0x3f6870, 0x4a7d78, 0xd78369, 0xdfa83e, 0x7295a0, 0xb35960];
 const districtNames = ['old-town', 'market', 'terrace', 'highline', 'canal', 'garden'];
 
-export const toon = color => new THREE.MeshToonMaterial({ color, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+export const toon = (color, kind = SURFACE.plaster) => surfaceMaterial(color, kind);
 
-export function outlined(geometry, color) {
+export function outlined(geometry, color, kind = SURFACE.plaster) {
   const group = new THREE.Group();
-  const mesh = new THREE.Mesh(geometry, toon(color));
+  const mesh = new THREE.Mesh(geometry, toon(color, kind));
   mesh.castShadow = true; mesh.receiveShadow = true; group.add(mesh);
   group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), new THREE.LineBasicMaterial({ color: INK })));
   return group;
@@ -23,8 +24,8 @@ export function outlined(geometry, color) {
 // Small trim pieces are baked into the district material without their own
 // edge geometry. Outlines stay on primary masses and landmarks; this keeps
 // startup and mobile GPU cost bounded as detail density rises.
-function box(group, x, y, z, w, h, d, color, outline = false) {
-  const mesh = outline ? outlined(new THREE.BoxGeometry(w, h, d), color) : new THREE.Mesh(new THREE.BoxGeometry(w, h, d), toon(color));
+function box(group, x, y, z, w, h, d, color, outline = false, kind = SURFACE.plaster) {
+  const mesh = outline ? outlined(new THREE.BoxGeometry(w, h, d), color, kind) : new THREE.Mesh(new THREE.BoxGeometry(w, h, d), toon(color, kind));
   mesh.position.set(x, y, z); group.add(mesh); return mesh;
 }
 
@@ -37,27 +38,30 @@ function stripe(group, side, x, y, z, h, color) {
 // `x` is the road-facing facade plane, rather than a building centre.
 function window(group, side, x, y, z, color = 0x355563, w = 1.15, h = 1.35) {
   const front = x - side * .06;
-  box(group, front, y, z, .11, h, w, color);
+  box(group, front, y, z, .11, h + .14, w + .14, 0x293e49, false, SURFACE.metal);
+  box(group, front - side * .065, y, z, .035, h - .14, w - .12, color, false, SURFACE.window);
+  box(group, front - side * .09, y, z, .045, h, .055, 0xc6b58f, false, SURFACE.timber);
+  if (h > 1.2) box(group, front - side * .09, y + h * .12, z, .045, .055, w, 0xc6b58f, false, SURFACE.timber);
   box(group, front - side * .09, y - h / 2 - .12, z, .3, .12, w + .25, 0xe8dec3);
 }
 
-function sign(group, side, x, y, z, color, width = 2.3, height = 1.25) {
-  const front = x - side * .08;
-  box(group, front, y, z, .14, height, width, color);
-  box(group, front - side * .09, y + .27, z, .08, .08, width * .66, 0xf4ecd7);
-  box(group, front - side * .1, y - .05, z, .08, .11, width * .42, INK);
+function sign(group, side, x, y, z, color, width = 5.2, height = 1.05, label = 0) {
+  const front = x - side * .22;
+  box(group, front, y, z, .18, height + .16, width + .16, 0xdcc49a, false, SURFACE.timber);
+  const fascia = box(group, front - side * .12, y, z, .04, height, width, 0xffffff, false, SURFACE.sign);
+  fascia.material.userData.surfaceSeed = (label % 8 + .5) / 8;
 }
 
 function awning(group, side, x, y, z, color, width = 2.8) {
   const front = x - side * .58;
-  box(group, front, y, z, .8, .16, width, color);
-  box(group, front - side * .42, y - .23, z, .08, .3, width, 0xf3e7cd);
+  box(group, front, y, z, .8, .16, width, color, false, SURFACE.fabric);
+  box(group, front - side * .42, y - .23, z, .08, .3, width, color, false, SURFACE.fabric);
 }
 
 function vendingMachine(group, side, x, z, color) {
   const front = x - side * .22;
   box(group, front, -2.55, z, .45, 2.55, 1.3, color);
-  box(group, front - side * .25, -2.5, z, .1, 1.45, 1.03, 0xaed9cc);
+  box(group, front - side * .25, -2.5, z, .1, 1.45, 1.03, 0xaed9cc, false, SURFACE.lamp);
   for (let i = 0; i < 3; i++) box(group, front - side * .31, -2.95 + i * .4, z - .25, .08, .12, .2, accents[i + 1]);
 }
 
@@ -90,7 +94,12 @@ function bake(group) {
   const meshes = [], lines = [];
   group.traverse(object => {
     if (!object.geometry) return;
-    let geometry = object.geometry.clone().applyMatrix4(object.matrixWorld);
+    let geometry = object.geometry.clone();
+    if (!object.isLineSegments) {
+      const seed = object.material.userData.surfaceSeed ?? ((Math.sin(object.position.x * 13.7 + object.position.y * 7.1 + object.position.z * 3.3) * 43758.5453) % 1 + 1) % 1;
+      prepareSurfaceGeometry(geometry, object.material.userData.surface ?? 0, seed);
+    }
+    geometry.applyMatrix4(object.matrixWorld);
     if (!object.isLineSegments && geometry.index) { const indexed = geometry; geometry = geometry.toNonIndexed(); indexed.dispose(); }
     if (object.isLineSegments) { lines.push(geometry); return; }
     const color = object.material.color;
@@ -101,7 +110,7 @@ function bake(group) {
   });
   const result = new THREE.Group();
   if (meshes.length) {
-    const material = toon(0xffffff); material.vertexColors = true;
+    const material = surfaceMaterial(0xffffff, 0, { baked: true }); material.vertexColors = true;
     const mesh = new THREE.Mesh(mergeGeometries(meshes), material);
     mesh.castShadow = true; mesh.receiveShadow = true; result.add(mesh);
     meshes.forEach(geometry => geometry.dispose());
@@ -117,12 +126,21 @@ export function makeShip(id, selectedColor) {
   const group = new THREE.Group(), color = selectedColor ?? (id ? COLORS.magenta : COLORS.cyan);
   const shape = new THREE.Shape();
   shape.moveTo(0, -2); shape.lineTo(1.75, 1.2); shape.lineTo(.55, .85); shape.lineTo(0, 1.5); shape.lineTo(-.55, .85); shape.lineTo(-1.75, 1.2); shape.closePath();
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: .22, bevelEnabled: false }); geo.rotateX(Math.PI / 2);
-  group.add(outlined(geo, 0xf7eed9));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: .22, bevelEnabled: true, bevelThickness: .045, bevelSize: .055, bevelSegments: 1, steps: 1 }); geo.rotateX(Math.PI / 2);
+  group.add(outlined(geo, 0xf7eed9, SURFACE.metal));
   box(group, 0, .15, 0, .48, .3, 2.3, color);
-  const canopy = outlined(new THREE.SphereGeometry(.48, 8, 4), 0x294e60);
+  const canopy = outlined(new THREE.SphereGeometry(.48, 8, 4), 0x294e60, SURFACE.window);
+  canopy.children[0].material.dispose();
+  canopy.children[0].material = new THREE.MeshPhongMaterial({ color: 0x274e63, specular: 0x8bc6d4, shininess: 75 });
   canopy.scale.set(.7, .65, 1.4); canopy.position.set(0, .38, -.2); group.add(canopy);
+  // Navigation stripe, wing panels and a deliberately asymmetric courier badge.
+  box(group, -.57, .15, .25, .28, .035, .64, 0xd88a59, false, SURFACE.metal);
+  box(group, .62, .15, .5, .48, .035, .13, 0x345264, false, SURFACE.metal);
+  box(group, 0, .57, -.18, .045, .045, .72, 0xd7c9aa, false, SURFACE.metal);
   for (const side of [-1, 1]) {
+    box(group, side * 1.17, .13, .7, .07, .045, .7, 0xe5ae5f, false, SURFACE.metal);
+    box(group, side * .9, 0, 1.45, .43, .43, .15, 0x344753, false, SURFACE.metal);
+    box(group, side * .9, 0, 1.55, .24, .24, .08, 0x8ce7df, false, SURFACE.lamp);
     box(group, side * .9, 0, .65, .38, .38, 1.6, color);
     const flame = new THREE.Mesh(new THREE.ConeGeometry(.18, 1.8, 6), new THREE.MeshBasicMaterial({ color: 0x9affed }));
     flame.rotation.x = Math.PI / 2; flame.position.set(side * .9, 0, 2.1); flame.name = 'trail'; group.add(flame);
@@ -231,7 +249,7 @@ function makeDistrict(index) {
   // Raised curbs and sidewalks establish a street scale beneath the flight
   // path. The central lane remains open from -13 to +13 local units.
   for (const side of [-1, 1]) {
-    box(g, side * 15.8, -3.92, 0, 4.2, .45, 36, 0xbfc6b7);
+    box(g, side * 15.8, -3.92, 0, 4.2, .45, 36, 0xbfc6b7, false, SURFACE.paving);
     box(g, side * 13.75, -3.66, 0, .18, .18, 36, 0xf2e7ca);
   }
   const detail = index * 17 + 3;
@@ -239,27 +257,41 @@ function makeDistrict(index) {
     const x = side * (21 + (index % 3) * .8);
     const w = 8 + (index % 2) * 2;
     const h = 10 + (index * 7 + (side + 1) * 3) % 13;
-    box(g, x, h / 2 - 4, (index % 2 - .5) * 8, w, h, 25, palette[(index + (side > 0 ? 1 : 0)) % palette.length], true);
+    box(g, x, h / 2 - 4, (index % 2 - .5) * 8, w, h, 25, palette[(index + (side > 0 ? 1 : 0)) % palette.length], true, index % 3 === 0 ? SURFACE.brick : SURFACE.plaster);
     box(g, x, h - 3.65, (index % 2 - .5) * 8, w + .6, .52, 25.5, 0x536f72);
     // End facades remain visible through turns and from above.
     for (const end of [-1, 1]) {
       const z = (index % 2 - .5) * 8 + end * 12.56;
       for (let y = 0; y < h - 5; y += 3) for (const col of [-1, 0, 1]) {
-        box(g, x + col * w * .27, y, z, w * .15, 1.4, .1, accents[(index + col + 7) % accents.length]);
+        box(g, x + col * w * .27, y, z, w * .15 + .14, 1.54, .1, 0x304651, false, SURFACE.metal);
+        box(g, x + col * w * .27, y, z + end * .065, w * .15 - .1, 1.3, .04, accents[(index + col + 7) % accents.length], false, SURFACE.window);
+        box(g, x + col * w * .27, y - .81, z + end * .08, w * .15 + .25, .12, .32, 0xe3d4b5);
       }
       box(g, x, h * .55 - 4, z, w, .35 + index % 3 * .2, .14, accents[(index + 3) % accents.length]);
     }
     const front = x - side * (w / 2 + .04);
+    const centreZ = (index % 2 - .5) * 8;
+    // Deep cornices and grounded shop plinths give each facade weight.
+    box(g, front - side * .06, -2.7, centreZ, .24, 2.3, 24.8, accents[index % accents.length], false, SURFACE.timber);
+    box(g, front - side * .13, -.95, centreZ, .4, .22, 25, 0xe4d3ae);
+    box(g, front - side * .15, h - 4.2, centreZ, .5, .4, 25.3, 0xe8d7b1);
+    if (index % 2 === 0) for (const end of [-1, 1]) box(g, front - side * .1, h / 2 - 3, centreZ + end * 11.3, .28, h - 2, .45, 0xd4c29d);
+    // A lantern and its bracket are emissive geometry, no extra lights.
+    box(g, front - side * .55, 1.3, centreZ - 5, .9, .08, .08, INK, false, SURFACE.metal);
+    box(g, front - side * .95, .9, centreZ - 5, .36, .7, .42, 0xf5ce7d, false, SURFACE.lamp);
+    box(g, front - side * .95, 1.3, centreZ - 5, .5, .1, .55, INK, false, SURFACE.metal);
     // Storefronts and patterned upper windows create a navigable close wall.
     for (let floor = 0; floor < Math.floor((h - 3) / 2.8); floor++) {
       const y = -2.1 + floor * 2.65;
-      for (let slot = -1; slot <= 1; slot++) window(g, side, front, y, (index % 2 - .5) * 8 + slot * 3.1, floor === 0 ? accents[(detail + slot + 5) % accents.length] : 0x3d606a, 1.35, 1.5);
+      for (let slot = -1; slot <= 1; slot++) window(g, side, floor === 0 ? front - side * .2 : front, y, (index % 2 - .5) * 8 + slot * 3.1, floor === 0 ? accents[(detail + slot + 5) % accents.length] : 0x3d606a, 1.35, 1.5);
       if (floor > 0 && (floor + index) % 3 === 1) {
+        box(g, front - side * .32, y - .8, centreZ, .55, .3, 2.1, 0x9e6651, false, SURFACE.timber);
+        for (const dz of [-.65, 0, .65]) box(g, front - side * .34, y - .52, centreZ + dz, .5, .4, .52, 0x567d60);
         box(g, front - side * .3, y - .98, (index % 2 - .5) * 8 + 1.6, .1, .12, 3.4, 0xd2b47d);
         box(g, front - side * .3, y - .78, (index % 2 - .5) * 8 - .1, .1, .12, 3.4, 0xd2b47d);
       }
     }
-    sign(g, side, front, -1.0, (index % 2 - .5) * 8 - 1.8, accents[(detail + 2) % accents.length], 2.8, 1.15);
+    sign(g, side, front, -1.0, (index % 2 - .5) * 8 - 1.8, accents[(detail + 2) % accents.length], 5.2, 1.05, index);
     awning(g, side, front, -.15, (index % 2 - .5) * 8 + 1.3, accents[(detail + 4) % accents.length], 3.3);
     makeAC(g, side, front, Math.min(h - 5.4, 8), (index % 2 - .5) * 8 - 2.4);
     if (index % 3 === 0) makeRooftopTank(g, x + side * 1.7, h - 2.1, (index % 2 - .5) * 8, 0x879d95);
@@ -368,14 +400,15 @@ export function makeSkyline(scene) {
   let previousBlock = null, previousCell = '', previousRoute = null;
   const count = 31 * 31;
   const buildings = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count), true);
-  const roofs = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0x536f72), count));
+  const roofs = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0x536f72, SURFACE.roof), count));
   const bands = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xbfd2c9), count * 3));
-  const windows = instancePool(new THREE.InstancedMesh(skylineWindows(), new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide}), count), true);
+  const windows = instancePool(new THREE.InstancedMesh(skylineWindows(), surfaceMaterial(0xffffff, SURFACE.window), count), true);
   const setbacks = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count), true);
   const roofRooms = instancePool(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), toon(0xffffff), count), true);
   const aerials = instancePool(new THREE.InstancedMesh(new THREE.CylinderGeometry(.05,.08,1,5), toon(0x344c52), count));
   const pools = [buildings, roofs, bands, windows, setbacks, roofRooms, aerials];
   for (const pool of pools) scene.add(pool.mesh);
+  windows.mesh.material.side = THREE.DoubleSide;
   const cells = new Map(), clearance = new Set();
   const dummy = new THREE.Object3D(), color = new THREE.Color();
   const hash = (x, z) => { const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return n - Math.floor(n); };

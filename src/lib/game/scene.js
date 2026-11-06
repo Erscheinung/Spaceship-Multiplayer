@@ -5,30 +5,41 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { makeSkyline, disposeObject, outlined } from './procedural.js';
+import { makeSkyline, disposeObject } from './procedural.js';
 import { worldPosition, courseFrame, FLIGHT_SPEED } from './course.js';
+import { acquireStorefrontAtlas } from './storefronts.js';
+import { createAtmosphere } from './atmosphere.js';
+import { surfaceMaterial, SURFACE } from './surfaces.js';
 import { createRoad } from './road.js';
 
-export function createScene(container) {
+export function createScene(container, { clock } = {}) {
+  const releaseStorefronts = acquireStorefrontAtlas();
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xa5ddd6); scene.fog = new THREE.Fog(0xa5ddd6,80,260);
   const renderer = new THREE.WebGLRenderer({ antialias:false, powerPreference:'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.5)); renderer.toneMapping=THREE.NoToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.domElement.setAttribute('aria-label','Neon Wing illustrated 3D city flight'); container.appendChild(renderer.domElement);
   const camera = new THREE.PerspectiveCamera(65,1,.1,450);
-  scene.add(new THREE.HemisphereLight(0xffffff,0x789597,2.2));
+  const hemisphere = new THREE.HemisphereLight(0xffffff,0x789597,2.2); scene.add(hemisphere);
   const sun = new THREE.DirectionalLight(0xffefd3,2.4);sun.position.set(-25,45,20);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);
   Object.assign(sun.shadow.camera,{left:-45,right:45,top:60,bottom:-60,near:1,far:180});sun.shadow.bias=-.0003;sun.shadow.normalBias=.05;scene.add(sun,sun.target);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1400,1400),new THREE.MeshToonMaterial({color:0x708f91})); ground.receiveShadow=true;ground.rotation.x=-Math.PI/2;ground.position.y=-4.2;scene.add(ground);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1400,1400),surfaceMaterial(0x70828a, SURFACE.plaster, { world: true })); ground.receiveShadow=true;ground.rotation.x=-Math.PI/2;ground.position.y=-4.2;scene.add(ground);
   const updateRoad = createRoad(scene);
   const clouds=new THREE.Group();
-  for(let i=0;i<22;i++){
-    const c=outlined(new THREE.IcosahedronGeometry(1,1),0xeaf0d9);c.scale.set(9+i%4*3,2+i%3,4);c.position.set(Math.sin(i*23)*170,35+i%5*9,-80-i*12);clouds.add(c);
+  for(let i=0;i<7;i++){
+    const cloud=new THREE.Group();
+    for(let puff=0;puff<3;puff++){
+      const c=new THREE.Mesh(new THREE.SphereGeometry(1,8,5),new THREE.MeshToonMaterial({color:0xf2eddd}));
+      c.scale.set(8+puff*2,2.2+puff*.5,4);c.position.set(puff*7,puff%2,0);cloud.add(c);
+    }
+    cloud.position.set(Math.sin(i*23)*170,45+i%4*10,-80-i*35);clouds.add(cloud);
   }scene.add(clouds);
   const sightGeometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.8,0,0),new THREE.Vector3(-.25,0,0),new THREE.Vector3(.25,0,0),new THREE.Vector3(.8,0,0),new THREE.Vector3(0,-.8,0),new THREE.Vector3(0,-.25,0),new THREE.Vector3(0,.25,0),new THREE.Vector3(0,.8,0)]);
   const sight=new THREE.LineSegments(sightGeometry,new THREE.LineBasicMaterial({color:0xfff4d9,depthTest:false,transparent:true,opacity:.9}));sight.renderOrder=10;scene.add(sight);
   const city=makeSkyline(scene);
   const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));
   const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.16,.3,1.1);composer.addPass(bloom);const output=new OutputPass();composer.addPass(output);const antialias=new ShaderPass(FXAAShader);composer.addPass(antialias);
+  const atmosphere = createAtmosphere(scene, hemisphere, sun, bloom, clock);
+  scene.background=null;
   let portrait=false, initialized=false;
   const resize=()=>{const w=container.clientWidth,h=container.clientHeight;if(!w||!h)return;camera.aspect=w/h;portrait=camera.aspect<.85;camera.fov=portrait?78:65;camera.updateProjectionMatrix();renderer.setSize(w,h);composer.setSize(w,h);const ratio=renderer.getPixelRatio();antialias.uniforms.resolution.value.set(1/(w*ratio),1/(h*ratio));};
   const observer=new ResizeObserver(resize);observer.observe(container);resize();
@@ -46,8 +57,8 @@ export function createScene(container) {
     camera.up.lerp(cameraUp.set(frame.up.x,frame.up.y,frame.up.z),initialized?1-Math.exp(-dt*5):1).normalize();
     const fov=(portrait?78:65)+(player.boost ?? 0)*.25;
     camera.fov+=(fov-camera.fov)*(1-Math.exp(-dt*4));camera.updateProjectionMatrix();
-    sun.position.set(point.x-25,point.y+45,point.z+20);sun.target.position.set(point.x,point.y-4,point.z);
+    atmosphere.update(camera, point);
     camera.lookAt(look);sight.visible=brutal;
     const aim=worldPosition(player.x,player.y ?? 0,player.z-35,time);sight.position.set(aim.x,aim.y,aim.z);sight.quaternion.copy(camera.quaternion);initialized=true;composer.render();
-  },dispose(){observer.disconnect();disposeObject(scene);sun.shadow.dispose();bloom.dispose();output.dispose();antialias.dispose();composer.dispose();renderer.dispose();renderer.domElement.remove();}};
+  },dispose(){observer.disconnect();disposeObject(scene);releaseStorefronts();sun.shadow.dispose();bloom.dispose();output.dispose();antialias.dispose();composer.dispose();renderer.dispose();renderer.domElement.remove();}};
 }
