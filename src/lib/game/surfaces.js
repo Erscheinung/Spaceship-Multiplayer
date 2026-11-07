@@ -24,6 +24,17 @@ export function prepareSurfaceGeometry(geometry, kind = 0, seed = 0) {
   return geometry;
 }
 
+// Deliberate painted finishes in atlas order. Convert once to linear RGB so
+// the shader and vertex tints share Three's colour space. The source artwork
+// contributes construction detail, not its former earth-coloured albedo.
+const finishColors = [0xe1e8db, 0xdba4b5, 0x76aaa1, 0x4e6688,
+  0xb8768c, 0xc4d2c7, 0x479b9c, 0xd692ad,
+  0x508d91, 0x515c7b, 0xb77994, 0x748b92,
+  0xa1b6b5, 0x8eaeaa, 0x89c1c4, 0xb9b2ce];
+const finishGLSL = finishColors.map((hex, i) => {
+  const c = new THREE.Color(hex);
+  return `${i ? 'else ' : ''}if(tile<${(i + .5).toFixed(1)}) finish=vec3(${c.toArray().map(n => n.toFixed(5)).join(',')});`;
+}).join('\n');
 const functions = /* glsl */`
 uniform float cityNight;
 uniform sampler2D cityAtlas;
@@ -81,7 +92,18 @@ export function surfaceMaterial(color, kind = SURFACE.plaster, { baked = false, 
       if(kind<5.5 || kind>9.5) {
         float tile=kind>9.5?kind-10.0:(kind<.5?0.0:(kind<1.5?4.0:(kind<2.5?11.0:(kind<3.5?12.0:(kind<4.5?9.0:14.0)))));
         float span=tile<2.0?5.5:(tile<4.0?3.8:(tile<6.0?3.0:(tile<8.0?2.7:(tile<11.0?3.6:(tile<12.0?3.0:3.8)))));
-        diffuseColor.rgb*=paintedMaterial(tile,q,span);
+        // Keep ceramic joints, board rhythm and roof courses, but compress
+        // their value range. Broad plaster and paving are almost flat paint.
+        vec3 art=paintedMaterial(tile,q,span);
+        float value=dot(art,vec3(.2126,.7152,.0722));
+        float detail=tile<2.0?.075:(tile<4.0?.20:(tile<6.0?.22:(tile<8.0?.34:(tile<11.0?.28:(tile<13.0?.12:.36)))));
+        float relief=mix(1.0,clamp(value*2.2,.55,1.2),detail);
+        vec3 finish=vec3(1.0);
+        ${finishGLSL}
+        // Explicit atlas finishes own the colour; generic painted objects
+        // keep their authored vertex palette without a second dark tint.
+        diffuseColor.rgb*=kind>9.5?finish*relief:vec3(relief);
+
       } else if(kind<6.5) {
         // Quiet reflected sky, with a broad value change rather than stripes.
         float reflection=smoothstep(-1.0,1.0,sin(q.x*.28+q.y*.7));
@@ -97,14 +119,21 @@ export function surfaceMaterial(color, kind = SURFACE.plaster, { baked = false, 
         float occupancy=fract(vSurfaceData.y*13.71);
         float occupied=step(.53,occupancy);
         float glow=mix(occupied,1.0,lamp)*cityNight;
-        vec3 warm=mix(vec3(1.0,.43,.16),vec3(.62,.75,.81),step(.9,occupancy));
+        vec3 warm=mix(vec3(1.0,.52,.28),vec3(.28,.8,.85),step(.83,occupancy));
+        // Small fixtures carry coral/cyan/violet; occupied rooms stay warm.
+        vec3 neon=occupancy<.34?vec3(1.0,.21,.40):(occupancy<.68?vec3(.16,.85,.91):vec3(.57,.35,1.0));
+        warm=mix(warm,neon,lamp*.82);
         // Large windows remain tinted rooms rather than white light cards.
         // A quiet vertical falloff suggests depth; only small lamps bloom.
         float room=.64+.2*sin(vSurfaceUv.y*.65+vSurfaceData.y*5.0);
         totalEmissiveRadiance+=warm*glow*mix(.48*room,1.65,lamp);
+      } else if(vSurfaceData.x>8.5 && vSurfaceData.x<9.5) {
+        // Only the light lettering/pictograms emit, not a glowing wall card.
+        float lettering=smoothstep(.28,.64,max(diffuseColor.r,max(diffuseColor.g,diffuseColor.b)));
+        totalEmissiveRadiance+=diffuseColor.rgb*lettering*(.16+cityNight*.72);
       }
     `);
   };
-  material.customProgramCacheKey = () => `afterlight-surfaces-v4-${baked}-${world}`;
+  material.customProgramCacheKey = () => `afterlight-surfaces-v5-${baked}-${world}`;
   return material;
 }

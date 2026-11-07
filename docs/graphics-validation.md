@@ -78,3 +78,38 @@ The later follow-up replaces generic structural shader grids with a shared illus
 All 47 unit tests and Svelte check passed before the final layout/emission/geometry simplification; worker final geometry/layout checks pass. Final Vercel build succeeds. Final six-view scene capture confirms atlas loading and no shader/page errors. The final day/night captures were inspected. The user requested an immediate quota-conscious wrap, so final actual gameplay/FPS, full browser checks and physical phone/Safari verification were not run. Earlier performance tables belong to earlier revisions and must not be attributed to this one.
 
 When repeating renderer probes after copying source into a running Vite tree, restart Vite first. HMR timestamped imports can duplicate the atlas module and make a separate bare import report false readiness even while the scene's own atlas has loaded. Await the scene's shared atlas before timing; the benchmark now does so.
+
+
+## Neon cohesion, corridor panels and forward weapons
+
+The three pending feedback tasks are complete. The transparent cyan corridor panels were 320 tall road-edge guard instances; those visuals and their uploads are removed while the low rails and physical lane boundary remain. The material pass coordinates ivory, rose, teal and indigo, softens rugged atlas detail by surface type, replaces cobbles with smooth midnight-teal asphalt, and uses cyan/coral/violet shop lettering and fixtures. The six property families, shared material atlas and construction details remain. The supplied screenshot and a visit to [Messenger](https://messenger.abeto.co/) informed the broad tonal surfaces and cohesive palette; no reference assets were copied.
+
+Matched camera/time comparisons:
+
+| View | Previous | Final |
+| --- | --- | --- |
+| Day street | [Before](screenshots/neon-before-day.png) | [After](screenshots/neon-day.png) |
+| Night street | [Before](screenshots/neon-before-night.png) | [After](screenshots/neon-night.png) |
+
+Also inspected [banked golden turn](screenshots/neon-golden-turn.png), [portrait](screenshots/neon-portrait.png), [dawn](screenshots/neon-dawn.png), [raised courtyard/roof view](screenshots/neon-courtyards.png), and actual boosted [desktop](screenshots/neon-gameplay-desktop.png) / [portrait](screenshots/neon-gameplay-portrait.png) gameplay. The clean road exposed foundation interference on banks: three foundation strips now match the central road triangulation, and both road/foundation materials disable inherited facade decal polygon offset. Fresh captures show no stripes or dots, with directional shadows retained.
+
+Assisted shooting now rejects rocks behind the ship, outside a 30-degree 3D cone, or more than 110 forward units away, and launches 1.7 units ahead of the hull. Brutal retains straight-forward fire. Unit coverage includes elevated valid targets, behind/off-cone/out-of-range threats and boosting. Ground regressions cover full width, recycling, bends/hills, period seams and the central foundation remaining below the asphalt at the maximum sampled bank.
+
+Final local validation:
+
+- All 51 unit tests pass; Svelte check reports zero errors/warnings; root Vercel production build succeeds.
+- All six Chromium integration checks pass in 1.6 minutes: solo pause/resume, real two-peer UI/pause/departure, mobile controls/layout, camera framing, lighting/material/long-route rendering, and real transport closure/recovery under injected jitter/loss.
+- The stable /tmp/neon-pending-after snapshot matches all 37 repository source/test/script/configuration files used by those checks. No changes to networking/protocol were needed.
+- Native M4 Metal gameplay at 1440×900 and 402×874, including boost/climb/descent and pause/resume, had median and p95 animation-frame intervals of 16.7 ms, with no page/shader errors or horizontal overflow. Solo still shows unlimited hull.
+- The refreshed root production preview serves HTTP 200 at http://localhost:5173.
+
+Renderer budget comparison uses 240 frames per view (60 warmup, 180 measured) at 1280×800 / DPR1 on the same M4 Metal renderer. Each pair ran sequentially, with the second pair reversing before/after order. Medians show system variation; these are budget checks, not a claim of a speedup:
+
+| View | Before median, pair 1 / 2 | Final median, pair 1 / 2 | Before → final draw calls |
+| --- | --- | --- | --- |
+| Day street | 3.3 / 2.8 ms | 3.2 / 2.5 ms | 89 → 88 |
+| Night street | 3.1 / 2.6 ms | 2.9 / 2.4 ms | 89 → 88 |
+| Boost through turn | 3.0 / 2.7 ms | 3.2 / 2.5 ms | 85 → 84 |
+| Night skyline | 3.0 / 2.6 ms | 4.5 / 2.4 ms | 90 → 89 |
+
+Texture count remains 16. The three-strip foundation adds 640 triangles, while removing guard instances produces a net reduction of 3,200 rendered triangles in these views and one fewer geometry/draw call. No extra lights or fullscreen passes. All sampled views remained bounded and free of page/shader errors. Physical phones, Safari/iOS GPU performance and real external VPNs remain untested.

@@ -6,10 +6,10 @@ import { FLIGHT_SPEED, courseFrame, worldPosition } from './course.js';
 
 export const COLORS = { cyan: 0x19cddd, magenta: 0xef657b, orange: 0xffa342 };
 const INK = 0x293c49;
-// The city uses a dusty plaster palette so the cyan sky and ship lights carry
-// the visual focus. Every shape below is original procedural geometry.
-export const palette = [0xf1e6cf, 0xd8d1b9, 0x9db8aa, 0xc9a889, 0xb8c9bb, 0xd7b86b, 0xa7b6c1, 0xd8a6a1, 0xb4abc7, 0xe3c49f, 0x91b7bb, 0xc4ce99, 0xc99379, 0xa5b5ce];
-const accents = [0x3f6870, 0x4a7d78, 0xd78369, 0xdfa83e, 0x7295a0, 0xb35960];
+// Ivory and teal masses establish a coherent illustrated city; rose/indigo
+// properties and small luminous shop details carry its orbital-night identity.
+export const palette = [0xe1e8db, 0xc5d6d1, 0x83b5ad, 0xb0c4c7, 0x94bdba, 0xd8c6b6, 0x91acbd, 0xd8a7b8, 0xaaa5c6, 0xd1d9cb, 0x78afb5, 0xbacdc2, 0xc18ea9, 0x99abc9];
+const accents = [0x3c808a, 0x61aaa3, 0xeb819b, 0xc89cd7, 0x6bbecb, 0xc56396];
 const districtNames = ['old-town', 'market', 'terrace', 'highline', 'canal', 'garden'];
 
 export const toon = (color, kind = SURFACE.plaster) => surfaceMaterial(color, kind);
@@ -48,7 +48,7 @@ function window(group, side, x, y, z, color = 0x355563, w = 1.15, h = 1.35) {
 
 function sign(group, side, x, y, z, color, width = 5.2, height = 1.05, label = 0) {
   const front = x - side * .22;
-  box(group, front, y, z, .18, height + .16, width + .16, 0xdcc49a, false, SURFACE.timber);
+  box(group, front, y, z, .18, height + .16, width + .16, 0x688d98, false, SURFACE.metal);
   const fascia = box(group, front - side * .12, y, z, .04, height, width, 0xffffff, false, SURFACE.sign);
   fascia.material.userData.surfaceSeed = (label % 8 + .5) / 8;
 }
@@ -262,12 +262,12 @@ function addCable(group, z, y, sag = 0) {
 // A frontage is authored in a local frame: -X faces the street, Z runs across
 // the wall. Individual properties share construction rules, not a window grid.
 const families = [
-  { name: 'brick-maison', wall: MATERIAL.terracottaBrick, base: MATERIAL.wood, roof: MATERIAL.slate, trim: 0xf3dcb0, accent: 0x426a74, height: 19 },
-  { name: 'noodle-house', wall: MATERIAL.ivory, base: MATERIAL.indigoBoards, roof: MATERIAL.terracottaRoof, trim: 0x775037, accent: 0xc5613f, height: 11 },
-  { name: 'stone-arcade', wall: MATERIAL.limestone, base: MATERIAL.limestone, roof: MATERIAL.copper, trim: 0xffe9bf, accent: 0x3c7775, height: 15 },
-  { name: 'tile-cafe', wall: MATERIAL.ivory, base: MATERIAL.tealTile, roof: MATERIAL.copper, trim: 0xffe6ae, accent: 0x2e6972, height: 17 },
-  { name: 'rose-townhouse', wall: MATERIAL.rose, base: MATERIAL.coralTile, roof: MATERIAL.slate, trim: 0xffe6bf, accent: 0x425772, height: 17 },
-  { name: 'garden-workshop', wall: MATERIAL.sageBoards, base: MATERIAL.terracottaBrick, roof: MATERIAL.slate, trim: 0xe6d5ae, accent: 0x476a60, height: 12 }
+  { name: 'brick-maison', wall: MATERIAL.terracottaBrick, base: MATERIAL.wood, roof: MATERIAL.slate, trim: 0xe2e9dc, accent: 0x426a74, height: 19 },
+  { name: 'noodle-house', wall: MATERIAL.ivory, base: MATERIAL.indigoBoards, roof: MATERIAL.terracottaRoof, trim: 0x55747c, accent: 0xe583a3, height: 11 },
+  { name: 'stone-arcade', wall: MATERIAL.limestone, base: MATERIAL.limestone, roof: MATERIAL.copper, trim: 0xe0e9dc, accent: 0x3c7775, height: 15 },
+  { name: 'tile-cafe', wall: MATERIAL.ivory, base: MATERIAL.tealTile, roof: MATERIAL.copper, trim: 0xddece1, accent: 0x2e6972, height: 17 },
+  { name: 'rose-townhouse', wall: MATERIAL.rose, base: MATERIAL.coralTile, roof: MATERIAL.slate, trim: 0xe5e6da, accent: 0x425772, height: 17 },
+  { name: 'garden-workshop', wall: MATERIAL.sageBoards, base: MATERIAL.terracottaBrick, roof: MATERIAL.slate, trim: 0xcfdfda, accent: 0x476a60, height: 12 }
 ];
 
 function facadeWindow(g, y, z, width, height, trim, { bay = false, lattice = false, shutters = false, accent = 0x456778 } = {}) {
@@ -326,7 +326,7 @@ function shopDoor(g, y, z, width, height, trim, timber = false) {
 }
 
 function paperLantern(g, y, z) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.36, 8, 4), toon(0xe77d45, SURFACE.lamp));
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(.36, 8, 4), toon(0xef8ca9, SURFACE.lamp));
   mesh.scale.set(.85, 1.35, 1); mesh.position.set(-.85, y, z); g.add(mesh);
   box(g, -.85, y + .51, z, .28, .14, .28, 0x463b37, false, SURFACE.metal);
   box(g, -.4, y + .65, z, .9, .06, .06, 0x463b37, false, SURFACE.metal);
@@ -415,7 +415,7 @@ function authoredFrontage(g, width, h, identity, label, variant) {
   box(g, -.23, -3.85, 0, .5, .2, width + .2, f.trim, false, SURFACE.metal);
   if (identity !== 1) {
     box(g, -.65, .25, width * .44, .85, .07, .07, 0x344951, false, SURFACE.metal);
-    box(g, -1, -.1, width * .44, .28, .65, .34, 0xf6d395, false, SURFACE.lamp);
+    box(g, -1, -.1, width * .44, .28, .65, .34, 0x99d8dc, false, SURFACE.lamp);
   }
 }
 
@@ -515,7 +515,7 @@ function makeDistrict(index) {
   g.userData.familyKit = true; g.userData.materialSeed = index;
   for (const side of [-1, 1]) {
     box(g, side * 15.8, -3.92, 0, 4.2, .45, 36, 0xf8f1e4, false, MATERIAL.basalt);
-    box(g, side * 13.75, -3.66, 0, .18, .18, 36, 0xecd8b5, false, SURFACE.metal);
+    box(g, side * 13.75, -3.66, 0, .18, .18, 36, 0xc8e0d7, false, SURFACE.metal);
     for (let lot = 0; lot < 2; lot++) {
       const { identity, variation, width, depth, z, setback, height: h } = propertyLayout(index, side, lot);
       const f = families[identity];

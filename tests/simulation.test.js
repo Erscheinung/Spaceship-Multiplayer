@@ -141,6 +141,47 @@ test('brutal has no assisted aim and hits only aligned targets in three dimensio
   for(let i=0;i<30;i++)sim.tick();assert.equal(sim.state.rocks[0].hp,10);
   sim.state.rocks=[{id:2,x:p.x,y:p.y,z:p.z-2,r:1,hp:1,speed:0}];p.cooldown=0;sim.tick();sim.tick();assert.equal(sim.state.score,100);
 });
+
+test('assisted fire rejects behind and off-cone rocks, including extreme elevation', () => {
+  const cases = [
+    ['behind', { x: 0, y: 0, z: 20 }],
+    ['lateral off-cone', { x: 22, y: 0, z: -20 }],
+    ['vertical off-cone', { x: 0, y: 20, z: -20 }],
+    ['out of forward range', { x: 0, y: 0, z: -120 }]
+  ];
+  for (const [label, offset] of cases) {
+    const sim = new Simulation({ solo: true }); sim.spawnClock = Infinity;
+    const p = sim.state.players[0]; p.x = 0; p.y = 0; p.z = 8; p.cooldown = 0;
+    sim.state.rocks = [{ id: 1, x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z, r: 1, hp: 2, speed: 0 }];
+    sim.tick();
+    assert.equal(sim.state.bullets.length, 0, label);
+  }
+});
+
+test('assisted fire tracks a valid elevated rock and spawns its shot beyond the nose', () => {
+  const sim = new Simulation({ solo: true }); sim.spawnClock = Infinity;
+  const p = sim.state.players[0]; p.x = 0; p.y = 4; p.z = 8; p.cooldown = 0;
+  sim.state.rocks = [{ id: 1, x: 5, y: 12, z: -22, r: 1, hp: 2, speed: 0 }];
+  sim.tick();
+  assert.equal(sim.state.bullets.length, 1);
+  const shot = sim.state.bullets[0];
+  assert.ok(shot.x > p.x); assert.ok(shot.y > p.y); assert.ok(shot.z < p.z - 1.5);
+  assert.ok(shot.vx > 0); assert.ok(shot.vy > 0); assert.ok(shot.vz < 0);
+  assert.ok(Math.abs(shot.vy) < Math.abs(shot.vz));
+});
+
+test('assisted fire remains forward and ahead of the hull while boosting', () => {
+  const sim = new Simulation({ solo: true }); sim.spawnClock = Infinity;
+  const p = sim.state.players[0]; p.x = 0; p.y = 8; p.z = 8; p.boost = 58; p.cooldown = 0;
+  sim.setInput(0, { x: 0, z: 0, turbo: true });
+  sim.state.rocks = [{ id: 1, x: 4, y: 10, z: -37, r: 1, hp: 2, speed: 0 }];
+  sim.tick();
+  assert.equal(sim.state.bullets.length, 1);
+  const shot = sim.state.bullets[0];
+  assert.ok(shot.z < p.z - 1.5); assert.ok(shot.vz < -90);
+  assert.ok(shot.vx > 0); assert.ok(shot.vz < 0);
+});
+
 test('altitude separates damage and pickup attraction; difficulty and colors are validated', () => {
   const sim=new Simulation({solo:true,settings:{difficulty:'invalid',colors:['invalid','gold']}});sim.spawnClock=Infinity;
   assert.equal(sim.state.settings.difficulty,'normal');assert.deepEqual(sim.state.settings.colors,['cyan','gold']);

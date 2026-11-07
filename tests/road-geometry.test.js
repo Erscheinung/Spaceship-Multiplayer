@@ -21,6 +21,13 @@ function supportMesh(section) {
   return scene.children.find(object => object.userData.roadSupport);
 }
 
+function roadMeshes(section) {
+  const scene = { children: [], add(object) { this.children.push(object); } };
+  const update = createRoad(scene);
+  update(section);
+  return { update, road: scene.children[0], support: scene.children.find(object => object.userData.roadSupport) };
+}
+
 test('rolling foundation spans road, sidewalks and property frontage at route grade', () => {
   const section = 700, segment = section, slot = ((segment % 160) + 160) % 160;
   const distance = segment * 2 + 1, frame = courseFrame(distance);
@@ -30,11 +37,13 @@ test('rolling foundation spans road, sidewalks and property frontage at route gr
   assert.ok(ROAD_SUPPORT.extent > 27.8, 'foundation must extend beneath the outer property footings');
   const support = supportMesh(section);
   const positions = support.geometry.getAttribute('position');
-  const start = slot * 6;
+  const start = slot * 18;
   assert.ok(close(vectorAt(positions, start), expectedPoint(frame, -ROAD_SUPPORT.extent, ROAD_SUPPORT.height)));
-  assert.ok(close(vectorAt(positions, start + 1), expectedPoint(frame, ROAD_SUPPORT.extent, ROAD_SUPPORT.height)));
+  // The support is three independently triangulated strips. The outer right
+  // edge is the second vertex of the final strip's first triangle.
+  assert.ok(close(vectorAt(positions, start + 13), expectedPoint(frame, ROAD_SUPPORT.extent, ROAD_SUPPORT.height)));
   const normals = support.geometry.getAttribute('normal');
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 18; i++) {
     const normal = vectorAt(normals, start + i);
     assert.ok(normal.x * frame.up.x + normal.y * frame.up.y + normal.z * frame.up.z > 0.98);
   }
@@ -50,9 +59,12 @@ test('recycled foundation remains continuous through bends, hills, period seam a
     const firstSegment = section - 18, lastSegment = firstSegment + 160 - 1;
     const slot = segment => ((segment % 160) + 160) % 160;
     for (let segment = firstSegment; segment < lastSegment; segment++) {
-      const current = slot(segment) * 6, next = slot(segment + 1) * 6;
-      assert.ok(close(vectorAt(positions, current + 2), vectorAt(positions, next)));
-      assert.ok(close(vectorAt(positions, current + 4), vectorAt(positions, next + 1)));
+      const current = slot(segment) * 18, next = slot(segment + 1) * 18;
+      for (let strip = 0; strip < 3; strip++) {
+        const currentStrip = current + strip * 6, nextStrip = next + strip * 6;
+        assert.ok(close(vectorAt(positions, currentStrip + 2), vectorAt(positions, nextStrip)));
+        assert.ok(close(vectorAt(positions, currentStrip + 4), vectorAt(positions, nextStrip + 1)));
+      }
     }
     const uv = support.geometry.getAttribute('surfaceUv');
     assert.ok(uv.array.every(Number.isFinite));
@@ -79,4 +91,29 @@ test('wide route foundation offsets stay ordered and forward-facing over the ful
   assert.ok(maxGrade > 0.1 && maxBank > 0.3, 'samples should include steep, banked route sections');
   assert.ok(minForwardProgress > 0.5, 'offset strips must not reverse/fold along a turn');
   assert.ok(minSideSeparation > ROAD_SUPPORT.extent * 1.9, 'left/right foundation edges must stay ordered');
+});
+
+test('banked central foundation stays below the identically triangulated asphalt', () => {
+  let bankedDistance = 0, maxBank = 0;
+  for (let distance = 0; distance <= 3600; distance += 2) {
+    const bank = Math.abs(courseFrame(distance).bank);
+    if (bank > maxBank) { maxBank = bank; bankedDistance = distance; }
+  }
+  assert.ok(maxBank > 0.3, 'route samples must include a visibly banked section');
+  const segment = Math.round((bankedDistance - 1) / 2), section = segment + 18;
+  const { road, support } = roadMeshes(section);
+  const roadPositions = road.geometry.getAttribute('position');
+  const supportPositions = support.geometry.getAttribute('position');
+  const slot = ((segment % 160) + 160) % 160;
+  const roadBase = slot * 6, supportBase = slot * 18 + 6; // central support strip
+  const distance = segment * 2 + 1;
+  const first = courseFrame(distance), last = courseFrame(distance + 2);
+  const frames = [first, first, last, first, last, last];
+  for (let i = 0; i < 6; i++) {
+    const asphalt = vectorAt(roadPositions, roadBase + i);
+    const foundation = vectorAt(supportPositions, supportBase + i);
+    const frame = frames[i];
+    const gap = (asphalt.x - foundation.x) * frame.up.x + (asphalt.y - foundation.y) * frame.up.y + (asphalt.z - foundation.z) * frame.up.z;
+    assert.ok(gap > 0.09, `foundation vertex ${i} must remain below asphalt through the bank`);
+  }
 });

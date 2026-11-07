@@ -79,9 +79,9 @@ export function createAtmosphere(scene, hemisphere, sun, bloom, clock = () => ne
   });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(390,32,16),skyMaterial);
   sky.frustumCulled=false; sky.renderOrder=-100; scene.add(sky);
-  const dayZenith=new THREE.Color(0x418cae), nightZenith=new THREE.Color(0x0b1537);
-  const dayHorizon=new THREE.Color(0xc8e1d5), nightHorizon=new THREE.Color(0x3b4269), sunset=new THREE.Color(0xf0ae78);
-  const warmSun=new THREE.Color(0xffb572), noonSun=new THREE.Color(0xfff0d2), moonSun=new THREE.Color(0x9db9ed);
+  const dayZenith=new THREE.Color(0x529da9), nightZenith=new THREE.Color(0x0b1537);
+  const dayHorizon=new THREE.Color(0xc2ddd3), nightHorizon=new THREE.Color(0x3b4269), sunset=new THREE.Color(0xf0ae78);
+  const warmSun=new THREE.Color(0xffb572), noonSun=new THREE.Color(0xf0f3e5), moonSun=new THREE.Color(0x9db9ed);
   const lightDirection=new THREE.Vector3(), warmGround=new THREE.Color(0x686879), dayGround=new THREE.Color(0x8b9f96);
   let lastSecond=-1, lighting, lightingPreset='auto';
   function setLightingPreset(preset) {

@@ -5,14 +5,14 @@ import { MATERIAL_ATLAS_URL, prepareMaterialAtlas, emptyMaterialAtlas } from './
 // An original, deliberately art-directed town identity, packed into one atlas.
 // This is shared GPU artwork with scene-level ownership, not per-shop textures.
 const shops = [
-  ['AFTERLIGHT POST', 'LATE PARCELS / SAFE ARRIVALS', '#385766', '#f2c779', 'post'],
-  ['COMET COFFEE', 'ONE MORE CUP BEFORE ORBIT', '#824d3f', '#f4d8ab', 'cup'],
-  ['NIGHTJAR RADIO', 'YOUR LOCAL SIGNAL / 88.4', '#334b66', '#dfb7a8', 'radio'],
-  ['MOSS & MOON', 'ROOFTOP GARDEN SUPPLIES', '#455d4a', '#d5dda5', 'leaf'],
-  ['RING ROAD REPAIRS', 'SMALL SHIPS / LONG JOURNEYS', '#ab7048', '#fff0ce', 'gear'],
-  ['BLUE HOUR BOOKS', 'STORIES FOR THE WAY HOME', '#4d526f', '#e8d8ae', 'book'],
-  ['LUNAR NOODLE CLUB', 'HOT SOUP / COLD SPACE', '#7c4750', '#f3c687', 'cup'],
-  ['THE STARLING HOTEL', 'A LIGHT LEFT ON FOR YOU', '#3b676b', '#f1d5a1', 'post']
+  ['AFTERLIGHT POST', 'LATE PARCELS / SAFE ARRIVALS', '#284e62', '#88edf0', 'post'],
+  ['COMET COFFEE', 'ONE MORE CUP BEFORE ORBIT', '#613c61', '#ffb8cf', 'cup'],
+  ['NIGHTJAR RADIO', 'YOUR LOCAL SIGNAL / 88.4', '#34365f', '#b9adff', 'radio'],
+  ['MOSS & MOON', 'ROOFTOP GARDEN SUPPLIES', '#315f60', '#a0e1c4', 'leaf'],
+  ['RING ROAD REPAIRS', 'SMALL SHIPS / LONG JOURNEYS', '#405576', '#ffbdc5', 'gear'],
+  ['BLUE HOUR BOOKS', 'STORIES FOR THE WAY HOME', '#484267', '#b6dbef', 'book'],
+  ['LUNAR NOODLE CLUB', 'HOT SOUP / COLD SPACE', '#6c3658', '#ff9fb6', 'cup'],
+  ['THE STARLING HOTEL', 'A LIGHT LEFT ON FOR YOU', '#345f72', '#8de0e1', 'post']
 ];
 let owners = 0, materialLoad = 0;
 let materialReady = Promise.resolve(false);

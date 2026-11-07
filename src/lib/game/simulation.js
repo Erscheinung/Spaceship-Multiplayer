@@ -8,6 +8,25 @@ export const CRUISE_SPEED = 25;
 export const BOOST_SPEED = 58;
 export const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z, (a.y ?? 0) - (b.y ?? 0));
+// Assisted fire is deliberately a forward-only aid.  The route's flight
+// direction is -z, so a rock must be within this cone before it can influence
+// the shot direction.  Keeping the cone narrow prevents targets above, below
+// or beside the ship from producing visibly implausible aim corrections.
+const assistedAimRange = 110;
+const assistedAimCos = Math.cos(Math.PI / 6); // 30 degree half-angle.
+const assistedTarget = (pilot, rocks) => rocks.reduce((best, rock) => {
+  if (rock.hp <= 0) return best;
+  const dx = rock.x - pilot.x;
+  const dy = (rock.y ?? 0) - (pilot.y ?? 0);
+  const dz = rock.z - pilot.z;
+  const forward = -dz;
+  const length = Math.hypot(dx, dy, dz);
+  // Reject rocks behind the pilot, outside the useful forward window, or
+  // outside the 3D cone.  A center-point test keeps target selection stable
+  // and leaves the projectile collision radius to handle visible overlap.
+  if (forward <= 0 || forward > assistedAimRange || forward / Math.max(length, 1e-8) < assistedAimCos) return best;
+  return !best || length < distance(pilot, best) ? rock : best;
+}, null);
 // Include the ship's travel between steps so a fast pass cannot skip an orb.
 const pickupRadius = 2.4; // Ship hull plus the visible pickup ring.
 // Collision envelope follows the visible delta hull, excluding the exhaust
@@ -98,17 +117,21 @@ export class Simulation {
         this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y);
       }
       p.invulnerable = Math.max(0, p.invulnerable - dt); p.cooldown -= dt;
-      const target = s.rocks.reduce((best, r) => !best || distance(p, r) < distance(p, best) ? r : best, null);
+      const target = this.difficulty.aim ? assistedTarget(p, s.rocks) : null;
       if ((target || !this.difficulty.aim) && p.cooldown <= 0) {
         p.cooldown = Math.max(0.11, 0.48 * Math.pow(0.83, p.rate));
         const direction = this.difficulty.aim && target ? { x: target.x-p.x, y: (target.y ?? 0)-p.y, z: target.z-p.z } : { x:0, y:0, z:-1 };
         const length = Math.max(.001, Math.hypot(direction.x,direction.y,direction.z));
+        const nx = direction.x / length, ny = direction.y / length, nz = direction.z / length;
         const count = 1 + p.spread * 2;
         for (let i = 0; i < count; i++) {
           const a = (i - (count - 1) / 2) * .14;
-          const vx = direction.x/length, vz = direction.z/length;
-          s.bullets.push({ id:this.nextId++, owner:p.id, x:p.x, y:p.y, z:p.z,
-            vx:(vx*Math.cos(a)-vz*Math.sin(a))*46, vy:direction.y/length*46, vz:(vx*Math.sin(a)+vz*Math.cos(a))*46-p.boost, life:2 });
+          const vx = nx, vz = nz;
+          // Start just beyond the ship's nose so shots cannot appear to come
+          // from inside the hull, especially while the pilot is boosting.
+          const spawnAhead = 1.7;
+          s.bullets.push({ id:this.nextId++, owner:p.id, x:p.x + nx * spawnAhead, y:p.y + ny * spawnAhead, z:p.z + nz * spawnAhead,
+            vx:(vx*Math.cos(a)-vz*Math.sin(a))*46, vy:ny*46, vz:(vx*Math.sin(a)+vz*Math.cos(a))*46-p.boost, life:2 });
         }
       }
     }

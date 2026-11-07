@@ -12,39 +12,43 @@ export function createRoad(scene) {
   const normals = new THREE.BufferAttribute(new Float32Array(count * 18), 3).setUsage(THREE.DynamicDrawUsage);
   const surfaceUv = new THREE.BufferAttribute(new Float32Array(count * 12), 2).setUsage(THREE.DynamicDrawUsage);
   const surfaceData = new THREE.BufferAttribute(new Float32Array(count * 12), 2);
-  for (let i = 0; i < count * 6; i++) { surfaceData.setXY(i, SURFACE.paving, .4); }
+  for (let i = 0; i < count * 6; i++) { surfaceData.setXY(i, SURFACE.metal, .4); }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('surfaceUv', surfaceUv); geometry.setAttribute('surfaceData', surfaceData);
   geometry.setAttribute('position', positions); geometry.setAttribute('normal', normals);
-  // The atlas supplies the full-color basalt albedo. Keep this cool near-white
-  // multiplier so the former grey-green road tint does not crush its values.
-  const road = new THREE.Mesh(geometry, surfaceMaterial(0xe8edf0, SURFACE.paving, { baked: true }));
+  // Smooth midnight-teal asphalt gives flight markings and ship silhouettes
+  // a quiet ground plane; the sidewalks retain their stone construction.
+  const road = new THREE.Mesh(geometry, surfaceMaterial(0x355561, SURFACE.metal, { baked: true }));
+  // These ribbons have real geometric clearance, unlike facade decals.
+  // Slope-scaled polygon offset can exceed that clearance at grazing angles
+  // and quantize the two depths into a dotted interference pattern.
+  road.material.polygonOffset = false;
   road.material.side = THREE.DoubleSide; road.receiveShadow = true; road.frustumCulled = false; scene.add(road);
   // A continuous foundation follows the same sampled route as the road. It
   // supports the road, sidewalk slabs, property frontages, and lot gaps
   // without relying on rigid 36m district slabs meeting through hills/turns.
   const supportGeometry = new THREE.BufferGeometry();
-  const supportPositions = new THREE.BufferAttribute(new Float32Array(count * 18), 3).setUsage(THREE.DynamicDrawUsage);
-  const supportNormals = new THREE.BufferAttribute(new Float32Array(count * 18), 3).setUsage(THREE.DynamicDrawUsage);
-  const supportUv = new THREE.BufferAttribute(new Float32Array(count * 12), 2).setUsage(THREE.DynamicDrawUsage);
-  const supportData = new Float32Array(count * 12);
-  for (let i = 0; i < count * 6; i++) { supportData[i * 2] = SURFACE.paving; supportData[i * 2 + 1] = .4; }
+  const supportPositions = new THREE.BufferAttribute(new Float32Array(count * 54), 3).setUsage(THREE.DynamicDrawUsage);
+  const supportNormals = new THREE.BufferAttribute(new Float32Array(count * 54), 3).setUsage(THREE.DynamicDrawUsage);
+  const supportUv = new THREE.BufferAttribute(new Float32Array(count * 36), 2).setUsage(THREE.DynamicDrawUsage);
+  const supportData = new Float32Array(count * 36);
+  for (let i = 0; i < count * 18; i++) { supportData[i * 2] = SURFACE.paving; supportData[i * 2 + 1] = .4; }
   supportGeometry.setAttribute('position', supportPositions);
   supportGeometry.setAttribute('normal', supportNormals);
   supportGeometry.setAttribute('surfaceUv', supportUv);
   supportGeometry.setAttribute('surfaceData', new THREE.BufferAttribute(supportData, 2));
-  const support = new THREE.Mesh(supportGeometry, surfaceMaterial(0xbfc6b7, SURFACE.paving, { baked: true }));
+  const support = new THREE.Mesh(supportGeometry, surfaceMaterial(0xadc6c7, SURFACE.paving, { baked: true }));
+  support.material.polygonOffset = false;
   support.material.side = THREE.DoubleSide;
   support.receiveShadow = true;
   support.frustumCulled = false;
   support.userData.roadSupport = true;
   scene.add(support);
-  const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(.45, .6, 1), new THREE.MeshToonMaterial({ color: 0xe3c56f }), count * 2);
+  const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(.45, .6, 1), new THREE.MeshToonMaterial({ color: 0x82b8b5 }), count * 2);
   rails.castShadow = true; rails.receiveShadow = true;
-  const guards = new THREE.InstancedMesh(new THREE.BoxGeometry(.1, 5, 1), new THREE.MeshBasicMaterial({ color: 0x19cddd, transparent: true, opacity: .06, depthWrite: false }), count * 2);
-  const marks = new THREE.InstancedMesh(new THREE.BoxGeometry(.14, .05, 1.25), new THREE.MeshToonMaterial({ color: 0xf3e3b9 }), count * 2);
+  const marks = new THREE.InstancedMesh(new THREE.BoxGeometry(.14, .05, 1.25), new THREE.MeshToonMaterial({ color: 0xd8eee5 }), count * 2);
   marks.receiveShadow = true;
-  const instances = [rails, guards, marks];
+  const instances = [rails, marks];
   for (const mesh of instances) { mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(mesh); }
   const slots = new Array(count), dummy = new THREE.Object3D(), basis = new THREE.Matrix4();
   const right = new THREE.Vector3(), up = new THREE.Vector3(), back = new THREE.Vector3();
@@ -52,24 +56,31 @@ export function createRoad(scene) {
   const edge = new THREE.Vector3(), normal = new THREE.Vector3(), start = new THREE.Vector3(), end = new THREE.Vector3();
   const offset = (f, x, y, target) => target.set(f.x + f.right.x * x + f.up.x * y, f.y + f.right.y * x + f.up.y * y, f.z + f.right.z * x + f.up.z * y);
   const supportPoints = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  // Match the road's centre-strip triangulation exactly. A single wider
+  // quad has a different diagonal through the bank/grade twist and can rise
+  // through the asphalt despite its lower corner vertices (depth fighting).
+  const supportEdges = [-ROAD_SUPPORT.extent, -13.8, 13.8, ROAD_SUPPORT.extent];
   const writeSupportQuad = (slot, distance, first, last) => {
-    offset(first, -ROAD_SUPPORT.extent, ROAD_SUPPORT.height, supportPoints[0]);
-    offset(first, ROAD_SUPPORT.extent, ROAD_SUPPORT.height, supportPoints[1]);
-    offset(last, -ROAD_SUPPORT.extent, ROAD_SUPPORT.height, supportPoints[2]);
-    offset(last, ROAD_SUPPORT.extent, ROAD_SUPPORT.height, supportPoints[3]);
-    const basePosition = slot * 18, baseVertex = slot * 6;
     const order = [0, 1, 2, 1, 3, 2];
-    const uv = [[-ROAD_SUPPORT.extent, distance], [ROAD_SUPPORT.extent, distance], [-ROAD_SUPPORT.extent, distance + 2], [ROAD_SUPPORT.extent, distance + 2]];
-    for (let vertex = 0; vertex < 6; vertex++) {
-      const source = order[vertex], point = supportPoints[source];
-      point.toArray(supportPositions.array, basePosition + vertex * 3);
-      supportUv.array[(baseVertex + vertex) * 2] = uv[source][0];
-      supportUv.array[(baseVertex + vertex) * 2 + 1] = uv[source][1];
-    }
-    for (let triangle = 0; triangle < 6; triangle += 3) {
-      const i0 = order[triangle], i1 = order[triangle + 1], i2 = order[triangle + 2];
-      normal.subVectors(supportPoints[i1], supportPoints[i0]).cross(edge.subVectors(supportPoints[i2], supportPoints[i0])).normalize();
-      for (let vertex = 0; vertex < 3; vertex++) normal.toArray(supportNormals.array, basePosition + (triangle + vertex) * 3);
+    for (let strip = 0; strip < 3; strip++) {
+      const left = supportEdges[strip], right = supportEdges[strip + 1];
+      offset(first, left, ROAD_SUPPORT.height, supportPoints[0]);
+      offset(first, right, ROAD_SUPPORT.height, supportPoints[1]);
+      offset(last, left, ROAD_SUPPORT.height, supportPoints[2]);
+      offset(last, right, ROAD_SUPPORT.height, supportPoints[3]);
+      const basePosition = slot * 54 + strip * 18, baseVertex = slot * 18 + strip * 6;
+      const uv = [[left, distance], [right, distance], [left, distance + 2], [right, distance + 2]];
+      for (let vertex = 0; vertex < 6; vertex++) {
+        const source = order[vertex], point = supportPoints[source];
+        point.toArray(supportPositions.array, basePosition + vertex * 3);
+        supportUv.array[(baseVertex + vertex) * 2] = uv[source][0];
+        supportUv.array[(baseVertex + vertex) * 2 + 1] = uv[source][1];
+      }
+      for (let triangle = 0; triangle < 6; triangle += 3) {
+        const i0 = order[triangle], i1 = order[triangle + 1], i2 = order[triangle + 2];
+        normal.subVectors(supportPoints[i1], supportPoints[i0]).cross(edge.subVectors(supportPoints[i2], supportPoints[i0])).normalize();
+        for (let vertex = 0; vertex < 3; vertex++) normal.toArray(supportNormals.array, basePosition + (triangle + vertex) * 3);
+      }
     }
   };
   let previousSection = null;
@@ -95,9 +106,9 @@ export function createRoad(scene) {
       for (let i = 9; i < 18; i += 3) normal.toArray(normals.array, base + i);
       positions.addUpdateRange(base, 18); normals.addUpdateRange(base, 18);
       writeSupportQuad(slot, distance, first, last);
-      supportPositions.addUpdateRange(slot * 18, 18);
-      supportNormals.addUpdateRange(slot * 18, 18);
-      supportUv.addUpdateRange(slot * 12, 12);
+      supportPositions.addUpdateRange(slot * 54, 54);
+      supportNormals.addUpdateRange(slot * 54, 54);
+      supportUv.addUpdateRange(slot * 36, 36);
       right.set(mid.right.x, mid.right.y, mid.right.z); up.set(mid.up.x, mid.up.y, mid.up.z); back.set(-mid.forward.x, -mid.forward.y, -mid.forward.z);
       dummy.quaternion.setFromRotationMatrix(basis.makeBasis(right, up, back));
       for (let j = 0; j < 2; j++) {
@@ -105,7 +116,6 @@ export function createRoad(scene) {
         offset(first, side * 13.8, 0, start); offset(last, side * 13.8, 0, end);
         dummy.position.copy(start).add(end).multiplyScalar(.5).addScaledVector(up, -3.65);
         dummy.scale.set(1, 1, start.distanceTo(end) + .1); dummy.updateMatrix(); rails.setMatrixAt(index, dummy.matrix);
-        dummy.position.addScaledVector(up, 5.6); dummy.updateMatrix(); guards.setMatrixAt(index, dummy.matrix);
         offset(mid, side * 5.8, -3.92, dummy.position); dummy.scale.set(1, 1, 1.6); dummy.updateMatrix(); marks.setMatrixAt(index, dummy.matrix);
       }
       for (const mesh of instances) mesh.instanceMatrix.addUpdateRange(slot * 32, 32);

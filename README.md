@@ -1,6 +1,6 @@
 # NEON WING
 
-A two-player illustrated city flight survival game built with **SvelteKit + pure Three.js + PeerJS**. Follow a banking chase camera along an elevated skyway with hairpins, climbs and descending bends, dodge poles and overhead gates, evade orange asteroids, and collect upgrades while your weapons automatically target the nearest threat.
+A two-player illustrated city flight survival game built with **SvelteKit + pure Three.js + PeerJS**. Follow a banking chase camera along an elevated skyway with hairpins, climbs and descending bends, dodge poles and overhead gates, evade orange asteroids, and collect upgrades while assisted weapons target nearby threats within a forward cone.
 
 The illustrated direction reinterprets the outlined architecture and street-level composition of [Messenger by Abeto](https://messenger.abeto.co). All geometry is original and generated in JavaScript; no Blender, downloaded models, or copied reference assets. A bundled illustrated material atlas supplies tactile timber, masonry, ceramics, plaster, roofs, cloth and paving; its [source and generation prompt](docs/texture-assets.md) are included. The licensed soundtrack is credited below.
 
@@ -40,7 +40,7 @@ For two devices on the same Wi-Fi, open the Network URL printed by Vite on the s
 | Touch climb | Hold the CLIMB button while steering |
 | Upgrade | Fly near cores to attract and collect them |
 
-- Cyan cores increase fire rate (eight levels); magenta cores add spread (up to five projectiles).
+- Cyan cores increase fire rate (eight levels); magenta cores add spread (up to five projectiles). Assisted fire selects rocks ahead within 110 forward units and a 30° 3D cone, launching from ahead of the nose. It ignores threats behind, far outside the flight direction, or out of range; Brutal fires straight forward.
 - Select Scenic, Survival, or Brutal before launch. The host sets the shared difficulty; each pilot independently chooses cyan, coral, gold, violet, or mint. Brutal has faster spawns, double damage, and no assisted aim: align horizontally and vertically.
 - Each pilot cruises at approximately 140 km/h and can pull beyond the drag-pad ring for a substantially faster boost (up to approximately 260 km/h); release the outer drag to coast back to cruise. Desktop pilots hold Shift for the same boost. Altitude ranges from 4 to 32 metres above the street. Hold climb to clear rooftops; release to descend. Enemies, shots, drops, and building collisions all account for altitude.
 - The route rises above the city, banks through hairpins and doubles back in world space. Steering and altitude are relative to its banked surface. Curves push the ship outward, especially under boost: countersteer to stay inside the guard fields. Boundary crashes damage hull and reduce boost. Solid towers, striped poles and overhead gates share their rendered geometry with host collision volumes; gates require flying above or below. Collisions push the ship clear and slow it down. Scenic/Survival hits cost one hull point; Brutal hits cost two. The floor retains a hover assist.
@@ -245,3 +245,7 @@ GRAPHICS_URL=http://127.0.0.1:5173 node scripts/benchmark-graphics.mjs --softwar
 ```
 
 The report identifies the renderer and includes CPU-to-GPU-completion timing, draw calls, triangles and resident texture/geometry counts. See [the local validation record](docs/graphics-validation.md) for the baseline comparison and device limits.
+
+### Neon material and forward-fire repair
+
+The city uses coordinated ivory, rose, teal and indigo painted finishes, quiet construction textures, smooth midnight-teal asphalt, and cyan/coral/violet shop lettering and fixtures. Architectural families, shop identities and the shared atlas remain. The tall translucent cyan side panels have been removed; physical lane boundaries and low rails remain. Route-following ground support shares the asphalt’s central triangulation so banked curves cannot expose the foundation through the road. See [the screenshot and validation record](docs/graphics-validation.md).
