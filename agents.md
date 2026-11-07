@@ -141,3 +141,19 @@ The assistant cannot inspect the user's five-hour usage quota. Update this log a
 - Assisted weapons now require rocks ahead within 110 forward units and a 30-degree 3D cone, and launch 1.7 units ahead of the hull. Behind/off-cone/out-of-range rocks are ignored; Brutal remains straight forward. Host authority and solo unlimited hull are preserved.
 - Final validation: all 51 unit tests pass; Svelte check zero errors/warnings; root Vercel build succeeds; all six Chromium integration checks pass in 1.6 minutes, including two-peer pause/departure and jitter/loss transport recovery. Stable snapshot /tmp/neon-pending-after matches all 37 source/test/script/configuration files. Fresh six-view and actual desktop/portrait boost/pause captures inspected without page/shader errors or overflow. Native M4 gameplay holds 16.7 ms median/p95 animation-frame intervals; sequential repeated renderer comparisons and limits are in docs/graphics-validation.md. Refreshed production preview http://localhost:5173 (LAN http://192.168.0.6:5173) returns HTTP 200; leave it running. Commit/push to main is authorized and triggers the existing Vercel integration; no manual deployment needed.
 - Before/after screenshots: docs/screenshots/neon-before-{day,night}.png and neon-{day,night,golden-turn,portrait,dawn,courtyards}.png; actual flight neon-gameplay-{desktop,portrait}.png. Existing shared texture count stays 16, draw calls decrease by one; three-strip support adds 640 triangles but removing guards reduces total visible triangles. Physical phones/Safari remain untested.
+
+## Future play and visual backlog — November 7, 2026
+User requested future ideas to be recorded, especially entertaining and meaningful replacements for sphere targets, distinctive charm, satisfying feedback, visual enhancements and reasons to replay. These are proposals for later implementation, not work started in this turn. Detailed behavior, acceptance criteria, references and performance/co-op constraints: [docs/gameplay-roadmap.md](docs/gameplay-roadmap.md).
+
+- [ ] P0: Prototype Static Moths, Runaway Parcel Trains and Clockwork Sign Crabs, with distinct forward-flight interactions and expressive completion animations.
+- [ ] P0: Add tangible seal-breaking, letter collection and restrained audiovisual feedback; preserve mute/reduced-motion options and shared simulation timing.
+- [ ] P0: Build a 90-second lost-night-mail delivery slice: recovered letters restore a named shop's neon sign and award an original postcard. Validate the loop before expanding it.
+- [ ] P1: Author encounter pacing, safe sight distances and low/high route choices instead of uniform enemy spawning.
+- [ ] P1: Prototype The Night Sorter set piece using learned encounter behaviors, with a clear safe path and a satisfying repair/delivery finale.
+- [ ] P1: Add generous co-op repair/delivery cooperation that also works solo and survives transport recovery; version shared-state changes.
+- [ ] P1: Give districts authored landmarks, construction rhythms and small courier-responsive shop/ambient animations.
+- [ ] P2: Compose a neighborhood arrival scene through restored signs, original audio motifs and low-cost animated shop responses.
+- [ ] P2: Add a local postcard route book, optional mastery marks and cosmetic courier rewards.
+- [ ] P2: Add replayable seeded delivery routes built from tested authored phrases, with optional personal-best ghosts later.
+
+Keep the current renderer budgets and simple phone controls. These ideas are hypotheses to playtest, not promises of retention; begin with one small original playable slice. Do not implement the whole backlog at once. The tested neon/forward-fire changes were committed and pushed as d99a141; this follow-up records future work only.
