@@ -5,6 +5,7 @@ import { worldPosition, courseFrame, FLIGHT_SPEED, cityObstacles } from './cours
 import { SHIP_COLORS } from './settings.js';
 import { normalizeLightingPreset } from './atmosphere.js';
 import { Simulation, STEP, CRUISE_SPEED, advanceFlight } from './simulation.js';
+import { createDeliveryVisuals } from './deliveryVisuals.js';
 
 const REMOTE_INTERPOLATION_DELAY = 0.1;
 const REMOTE_MAX_EXTRAPOLATION = 0.2;
@@ -20,6 +21,7 @@ export class Engine {
     this.mode = 'attract'; this.localId = 0; this.paused = false; this.destroyed = false; this.accumulator = 0; this.snapshotClock = 0; this.hudClock = 0; this.attractTime = 0;
     this.statsClock = 0; this.statsFrames = 0; this.networkStats = null; this.remoteSnapshots = []; this.remotePresentationTime = 0; this.latestSnapshotArrival = 0; this.latestSnapshotTime = 0; this.presentationOffset = { x: 0, y: 0, z: 0 };
     this.ships = [makeShip(0), makeShip(1)]; this.ships.forEach((s, i) => { s.position.set(i ? 4 : -4, 0, 7); this.world.scene.add(s); });
+    this.deliveryVisuals = createDeliveryVisuals(this.world.scene);
     this.keydown = e => {
       if (this.mode === 'attract' || /INPUT|TEXTAREA|SELECT/.test(e.target?.tagName)) return;
       if (e.code === 'Escape' && !e.repeat) { e.preventDefault(); this.onPause(); return; }
@@ -209,11 +211,13 @@ export class Engine {
       this.frameRight.set(f.right.x,f.right.y,f.right.z); this.frameUp.set(f.up.x,f.up.y,f.up.z); this.frameBack.set(-f.forward.x,-f.forward.y,-f.forward.z);
       object.quaternion.setFromRotationMatrix(this.orientationBasis.makeBasis(this.frameRight,this.frameUp,this.frameBack));
     };
+    const presentedPlayers = [];
     this.ships.forEach((ship, i) => {
       const remote = this.mode === 'client' && i !== this.localId;
       const source = remote ? this.remotePlayer(i) : this.mode === 'host' ? this.hostPlayer(i) : this.state?.players[i];
       const extrapolation = remote || this.mode === 'host' ? 0 : age;
       const p = this.mode === 'client' && i === this.localId ? this.renderPlayer() : source ? {...source, z:source.z-(source.boost ?? 0)*extrapolation, x:source.x+(source.vx ?? 0)*extrapolation} : null; ship.visible = !p || (p.active && p.hp > 0);
+      presentedPlayers[i] = p;
       const z = p?.z ?? 7, point = worldPosition(p?.x ?? (i ? 4 : -4), (p?.y ?? 0) + Math.sin(time*4+i)*.06, z, time);
       ship.position.set(point.x,point.y,point.z);orient(ship,z);
       const bank=-(p?.vx ?? Math.sin(time)*2)/12;
@@ -221,6 +225,7 @@ export class Engine {
       ship.scale.setScalar(p?.invulnerable > 0 ? 1 + Math.sin(time * 24) * .035 : 1);
       ship.children.filter(c => c.name === 'trail').forEach((c, j) => { c.scale.y = 0.85 + (p?.boost ?? 0)*.08 + Math.sin(time * 30 + j) * 0.25; });
     });
+    this.deliveryVisuals.update({ delivery: this.state?.delivery ?? null, players: presentedPlayers, time, dt });
 
     const alive = new Set();
     const sync = (items, prefix, create, update) => {
@@ -242,6 +247,6 @@ export class Engine {
   destroy() {
     this.destroyed = true; cancelAnimationFrame(this.raf); clearInterval(this.inputTimer);
     window.removeEventListener('keydown', this.keydown); window.removeEventListener('keyup', this.keyup); window.removeEventListener('blur', this.blur); document.removeEventListener('visibilitychange', this.visibility);
-    this.world.renderer.domElement.removeEventListener('webglcontextlost', this.contextLost); this.world.dispose();
+    this.world.renderer.domElement.removeEventListener('webglcontextlost', this.contextLost); this.deliveryVisuals.dispose(); this.world.dispose();
   }
 }

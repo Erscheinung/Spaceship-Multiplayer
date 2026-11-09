@@ -113,3 +113,44 @@ Renderer budget comparison uses 240 frames per view (60 warmup, 180 measured) at
 | Night skyline | 3.0 / 2.6 ms | 4.5 / 2.4 ms | 90 → 89 |
 
 Texture count remains 16. The three-strip foundation adds 640 triangles, while removing guard instances produces a net reduction of 3,200 rendered triangles in these views and one fewer geometry/draw call. No extra lights or fullscreen passes. All sampled views remained bounded and free of page/shader errors. Physical phones, Safari/iOS GPU performance and real external VPNs remain untested.
+
+
+## Lost Night Mail — November 9–10, 2026
+
+Lost Night Mail makes the courier promise playable in a roughly 90-second solo/co-op route. Static Moths unfold and release bulbs/mail, the leading parcel seal starts a four-package domino, and an optional higher Sign Crab socket becomes a repair kit. The route alternates those phrases with recovery stretches and a Nightjar Radio arrival. Recovered mail fills a small rack; successful delivery lights the radio station’s sign and windows, unfolds its aerial and reveals an original postcard. Endless survival remains selectable. The Night Sorter, dedicated two-socket cooperation, new district progression and a persistent postcard book remain proposed in the [roadmap](gameplay-roadmap.md).
+
+Observed corrections: the first real-flight moth was hidden behind a poster tower, so its approach now chooses a clear ray through the existing obstacle layout; the optional crab requires altitude alignment rather than being auto-solved from the floor. Nightjar’s opaque masses sit beyond the playable lane. Astra’s final review rejected the solid cross-road arrival beam as a false collision cue; the final marker uses roadside signage, separated ground chevrons and open brackets. Postcard results omit flight settings so replay/return remain easy to reach.
+
+The current route is an authored first slice, not a persistent campaign. Scripted flights and deterministic tests establish behavior; they do not establish that players recognize every target on their first run or voluntarily replay. Physical phones, Safari/iOS GPU timing and real external VPNs remain untested.
+
+Final validation:
+
+- **62 unit tests pass**, including the unobstructed natural moth approach, tell-gated swept hits, parcel domino idempotence, low-pass/climbed crab repair, swept collection, either-survivor delivery, explicit failure and frozen results.
+- **Svelte check: zero errors/warnings; root and identical local-snapshot Vercel production builds succeed.** Locked dependencies are unchanged.
+- **Nine distinct Chromium integration checks pass across the combined and focused runs.** Six existing checks cover solo/pause, real two-peer UI/pause/departure, mobile touch/layout, camera projection, lighting/long views and transport recovery under jitter/loss. The new checks cover full delivery/postcard/replay, selectable survival, and real-peer canonical mail/repair/restoration across pause, transport closure/recovery and replay. The co-op route driver uses actual authoritative fixed steps and normal climb input; the native solo route runs for its complete wall-clock flight. Both pilots must reload for `neon-wing-city-v8`.
+- The first co-op replay assertion incorrectly required observation within half a second; it now verifies exactly one Engine start per peer and cleared mission fields. Its climb controller was also corrected to reach the optional repair socket. The full-route test timed out under software WebGL at only 21 game seconds, already holding recovered mail; that file now uses native Metal on macOS and a smaller, longer software fallback elsewhere. These changes preserve the success/recovery/replay assertions. Six existing cases retain their software-rendering configuration.
+- After the final visual-only arrival corrections, repeated source checks/builds and **two complete final-source native flights** pass. Desktop/day delivered two letters and two bulbs (C); portrait/night delivered three letters and three bulbs (B), including a boost/climb window. Both completed restoration, pause/resume and clean replay with no page/shader errors or horizontal overflow. These conservative scripted lines bypassed the optional crab; its deliberate-climb path is covered by the simulation and real-peer checks.
+- Actual frame intervals over more than 5,400 samples per view were **16.7 ms median / 16.8 ms p95** on the native M4 Metal renderer, at 1440×900 and 402×874. These are measured animation-frame intervals, not the HUD's reported FPS. Physical phone/Safari results are not inferred.
+- A separate compiled production-preview smoke run launches delivery, advances the HUD and pauses successfully, with no page/shader errors or overflow. The refreshed preview serves HTTP 200 at **http://localhost:5173**.
+
+Matched **staged renderer fixtures** hold camera and course samples constant while changing restoration state:
+
+| View | Dark station | Restored station |
+| --- | --- | --- |
+| Day | [Before](screenshots/mail-staged-shop-before-day.png) | [After](screenshots/mail-staged-shop-after-day.png) |
+| Night | [Before](screenshots/mail-staged-shop-before-night.png) | [After](screenshots/mail-staged-shop-after-night.png) |
+
+The staged [moth](screenshots/mail-staged-moth-portrait.png), [parcel train](screenshots/mail-staged-parcel-day.png) and [crab](screenshots/mail-staged-crab-portrait.png) establish shape/contrast. Separate [moth release](screenshots/mail-staged-moth-completion.png), [parcel opening](screenshots/mail-staged-parcel-completion.png) and [crab folding](screenshots/mail-staged-crab-completion.png) fixtures inspect completion geometry; these are authored state probes, not evidence of a human completing those encounters. Actual flight captures include the [clear moth approach](screenshots/mail-flight-moth-desktop.png), [parcel approach](screenshots/mail-flight-parcel-desktop.png), [portrait crab approach](screenshots/mail-flight-crab-portrait.png), [portrait boost](screenshots/mail-boost-portrait.png), [desktop restoration](screenshots/mail-arrival-desktop.png), and final [desktop](screenshots/mail-postcard-desktop.png) / [portrait](screenshots/mail-postcard-portrait.png) postcards. The final compact roadside fascia is fully visible and the cross-road beam is absent.
+
+The isolated renderer comparison uses the previous city renderer from the preserved `neon-pending-after` snapshot versus the final source plus a staged delivery workload (moth, four parcels, crab or station, with a three-letter rack). Both use one courier ship, 1280×800 / DPR1, Apple M4 through ANGLE Metal, a GPU readback fence, 240 frames per view, 60 warmup and 180 measured. Runs are sequential with the second pair reversing order; no other browser/GPU test ran during them. System/GPU timing varies substantially, so lower numbers are **not a claimed speedup**.
+
+| View / added encounter | Before median, pairs 1 / 2 | Delivery median, pairs 1 / 2 | Before → delivery draw calls |
+| --- | --- | --- | --- |
+| Day street / moth | 2.8 / 3.0 ms | 3.6 / 2.8 ms | 88 → 104 |
+| Night street / four parcels | 5.4 / 5.5 ms | 3.7 / 3.8 ms | 88 → 119 |
+| Golden boosted turn / crab | 5.6 / 7.8 ms | 2.8 / 6.1 ms | 84 → 105 |
+| Night skyline / station | 5.3 / 7.0 ms | 2.8 / 3.6 ms | 89 → 113 |
+
+These views add 209–573 visible triangles, at most one GPU texture (16 → 17), and at most 18 uploaded geometries (99 total in the longest sampled view). Delivery p95 renderer samples range from 3.2–9.5 ms; baseline samples range from 4.5–10.2 ms. No page/shader errors were reported. The kit uses shared/pool-owned geometry/materials, merged landmark details, a shared sign atlas and a six-release cap. It adds no lights, shadows or fullscreen passes; the city's batching, rolling buffers and resolution/shadow budgets remain intact. Native full-flight pacing is the practical desktop evidence; the isolated samples are bounded workload checks, not phone measurements.
+
+Validation runs use `/tmp/neon-mail-validation` to avoid cloud watcher reloads, with all 44 runtime/test/script/config files checked against the repository. The renderer baseline remains `/tmp/neon-pending-after`. Raw native results are in the ignored `test-results/delivery-visual-report.json` in that final snapshot; `scripts/validate-delivery.mjs` reproduces full-route captures. Root cloud-placeholder dependencies were preserved in `.node_modules-cloud-backup-mail`; the working `node_modules` points to the matching locked `/tmp/neon-local-deps/node_modules`. Existing backups and the pre-existing unstaged September 24 log insertion were preserved.

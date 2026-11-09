@@ -172,10 +172,10 @@ test('an active run only accepts a replacement from its original peer', () => {
   session.host = true; session.started = true; session.guestPeerId = 'original';
   const old = new EventEmitter(); old.open = true; old.close = () => old.emit('close');
   session.connection = old;
-  const stranger = new EventEmitter(); stranger.peer = 'stranger'; stranger.metadata = { game: 'neon-wing-city-v7' };
+  const stranger = new EventEmitter(); stranger.peer = 'stranger'; stranger.metadata = { game: 'neon-wing-city-v8' };
   session.acceptConnection(stranger);
   assert.equal(session.connection, old);
-  const replacement = new EventEmitter(); replacement.peer = 'original'; replacement.metadata = { game: 'neon-wing-city-v7' }; replacement.close = () => {};
+  const replacement = new EventEmitter(); replacement.peer = 'original'; replacement.metadata = { game: 'neon-wing-city-v8' }; replacement.close = () => {};
   session.acceptConnection(replacement);
   assert.equal(session.connection, replacement);
   assert.equal(session.recovering, true);

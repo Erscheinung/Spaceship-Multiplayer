@@ -2,7 +2,7 @@ import { flightSettings, SHIP_COLORS } from '../game/settings.js';
 import Peer from 'peerjs';
 import { env } from '$env/dynamic/public';
 
-const PROTOCOL = 'neon-wing-city-v7';
+const PROTOCOL = 'neon-wing-city-v8';
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const STREAM_TYPES = new Set(['input', 'snapshot']);
 const STREAM_BUFFER_LIMIT = 16 * 1024;

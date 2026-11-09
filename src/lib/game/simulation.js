@@ -1,5 +1,6 @@
 import { DIFFICULTIES, flightSettings } from './settings.js';
 import { cityObstacles, hitsBuilding, courseFrame, FLIGHT_SPEED } from './course.js';
+import { advanceDelivery, collectDelivery, createDeliveryState, deliveryAimTargets, finishDelivery, hitDeliveryTargets } from './delivery.js';
 export const BOUNDS = { x: 13, zMin: -12, zMax: 13 };
 export const STEP = 1 / 60;
 // The former boost pace is now the everyday cruise pace. `boost` remains a
@@ -85,7 +86,7 @@ export class Simulation {
     this.random = random; this.nextId = 1; this.spawnClock = 0;
     this.cleanFlight = [0, 0];
     this.inputs = [{ x: 0, z: 0 }, { x: 0, z: 0 }];
-    this.state = { settings: this.settings, time: 0, score: 0, wave: 1, over: false, players: [player(0, true), player(1, !solo)], rocks: [], bullets: [], pickups: [], effects: [], obstacles: cityObstacles(0) };
+    this.state = { settings: this.settings, time: 0, score: 0, wave: 1, over: false, players: [player(0, true), player(1, !solo)], rocks: [], bullets: [], pickups: [], effects: [], obstacles: cityObstacles(0), delivery: this.settings.mode === 'delivery' ? createDeliveryState() : null };
   }
   setInput(id, input) {
     if (!this.inputs[id] || !input || !Number.isFinite(input.x) || !Number.isFinite(input.z)) return;
@@ -106,8 +107,13 @@ export class Simulation {
     const hullBefore = s.players.map(p => p.hp);
     const positionsBefore = s.players.map(p => ({ x: p.x, y: p.y ?? 0, z: p.z }));
     s.time += dt; s.obstacles = cityObstacles(s.time, s.players.filter(p => p.active && p.hp > 0)); s.wave = 1 + Math.floor(s.time / 25);
-    this.spawnClock -= dt;
-    if (this.spawnClock <= 0) { this.spawnRock(); this.spawnClock = Math.max(0.12, this.difficulty.spawn - s.time * 0.004); }
+    let deliveryMotion = null;
+    const deliveryCallbacks = { score: points => { s.score += points; }, effect: (x, z, color, y) => this.burst(x, z, color, y) };
+    if (s.delivery) deliveryMotion = advanceDelivery(s.delivery, { time: s.time, dt, players: s.players, callbacks: deliveryCallbacks });
+    else {
+      this.spawnClock -= dt;
+      if (this.spawnClock <= 0) { this.spawnRock(); this.spawnClock = Math.max(0.12, this.difficulty.spawn - s.time * 0.004); }
+    }
     for (const p of s.players) {
       if (!p.active || p.hp <= 0) continue;
       const input = this.inputs[p.id];
@@ -117,7 +123,7 @@ export class Simulation {
         this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y);
       }
       p.invulnerable = Math.max(0, p.invulnerable - dt); p.cooldown -= dt;
-      const target = this.difficulty.aim ? assistedTarget(p, s.rocks) : null;
+      const target = this.difficulty.aim ? assistedTarget(p, s.delivery ? deliveryAimTargets(s.delivery, p) : s.rocks) : null;
       if ((target || !this.difficulty.aim) && p.cooldown <= 0) {
         p.cooldown = Math.max(0.11, 0.48 * Math.pow(0.83, p.rate));
         const direction = this.difficulty.aim && target ? { x: target.x-p.x, y: (target.y ?? 0)-p.y, z: target.z-p.z } : { x:0, y:0, z:-1 };
@@ -135,6 +141,7 @@ export class Simulation {
         }
       }
     }
+    const bulletsBefore = new Map(s.bullets.map(bullet => [bullet.id, { x: bullet.x, y: bullet.y ?? 0, z: bullet.z }]));
     const rocksBefore = s.rocks.map(r => ({ x: r.x, y: r.y ?? 0, z: r.z }));
     for (const r of s.rocks) r.z += r.speed * dt;
     for (const b of s.bullets) {
@@ -149,6 +156,10 @@ export class Simulation {
         }
         break;
       }
+    }
+    if (s.delivery) {
+      hitDeliveryTargets(s.delivery, { bullets: s.bullets, bulletStarts: bulletsBefore, targetStarts: deliveryMotion.targetStarts, time: s.time, callbacks: deliveryCallbacks });
+      collectDelivery(s.delivery, { players: s.players, playerStarts: positionsBefore, releaseStarts: deliveryMotion.releaseStarts, destinationStart: deliveryMotion.destinationStart, time: s.time, dt, callbacks: deliveryCallbacks });
     }
     for (const p of s.players) {
       if (!p.active || p.hp <= 0) continue;
@@ -198,7 +209,8 @@ export class Simulation {
         }
       }
     }
-    s.over = s.players.every(p => !p.active || p.hp <= 0);
+    const allPilotsLost = s.players.every(p => !p.active || p.hp <= 0);
+    s.over = s.delivery ? finishDelivery(s.delivery, { time: s.time, allPilotsLost }) : allPilotsLost;
   }
   snapshot() { return structuredClone(this.state); }
 }

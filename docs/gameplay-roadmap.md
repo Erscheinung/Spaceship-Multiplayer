@@ -1,6 +1,6 @@
 # NEON WING — future play and visual direction
 
-Status: proposed backlog, recorded at the user's request. None of these features is implemented or a commitment to start work. The current tested renderer/combat repair is already on main. Start with the small playable slice below, then judge the ideas by play rather than adding the entire list.
+Status: the first **Lost Night Mail** playable slice is implemented: a shared 90-second route, Static Moths, a four-parcel domino release, an optional Sign Crab repair, collected mail, Nightjar Radio restoration and an arrival postcard. Endless survival remains selectable. The larger backlog below remains proposed; the Night Sorter, two-socket cooperation, distinct new districts and a persistent postcard collection are not implemented. Validation and observed limitations are recorded in [graphics-validation.md](graphics-validation.md).
 
 The promise: **a little courier ship brings a strange neon city back to life.** Bank through its streets, untangle stolen messages, and watch the neighborhood answer. Flight, targets, rewards, music and the city should express that same idea. A different enemy model alone will not make the current loop interesting.
 
@@ -8,7 +8,7 @@ The promise: **a little courier ship brings a strange neon city back to life.** 
 
 A 90-second authored route for Afterlight Post and Nightjar Radio: a calm introduction, two short encounters with a recovery stretch, one satisfying chain release, and a delivery arrival. Use the existing guided road and climb/boost controls. Give the player a destination and a visible bag of recovered letters, rather than only an endless timer and score.
 
-- [ ] **P0 — Replace sphere targets with three original, readable encounters.** Prototype each separately before mixing them. Retain simple forward-cone auto-fire: positioning, height and flight path should decide what the courier can hit. Never make the ship shoot backward to solve an encounter.
+- [x] **P0 — Prototype three original, readable encounters in the delivery route.** Endless survival retains its original targets. Retain simple forward-cone auto-fire: positioning, height and flight path should decide what the courier can hit. Never make the ship shoot backward to solve an encounter.
 
   | Target | Readable behavior and player choice | Satisfying result |
   | --- | --- | --- |
@@ -18,9 +18,9 @@ A 90-second authored route for Afterlight Post and Nightjar Radio: a calm introd
 
   Acceptance: distinct silhouettes and approach rhythms at portrait resolution; readable without color or audio; early versions cannot collide before their tells are visible. Every target has an approach, a response to a hit, and a recognizable completion. A player can explain the difference between encounters after one run. Retire the old generic spheres only when these actual interactions work.
 
-- [ ] **P0 — Make each successful interaction feel tangible.** Design anticipation → contact → release → collection. Use a brief local squash/recoil, a clear seal-breaking silhouette, a crisp synthesized impact, and a warmer collection chime. Let recovered letters curve into a visible mail rack, with a restrained count tick. Vary pitch within an authored musical palette. Keep the route and next hazard visible; avoid fullscreen flashes, long confetti showers and mandatory camera shake. Any contact accent is presentation-only: never freeze the shared simulation or network heartbeat. Respect mute and reduced motion.
+- [x] **P0 — Add release, collection and mail-rack feedback.** Design anticipation → contact → release → collection. Use a brief local squash/recoil, a clear seal-breaking silhouette, a crisp synthesized impact, and a warmer collection chime. Let recovered letters curve into a visible mail rack, with a restrained count tick. Vary pitch within an authored musical palette. Keep the route and next hazard visible; avoid fullscreen flashes, long confetti showers and mandatory camera shake. Any contact accent is presentation-only: never freeze the shared simulation or network heartbeat. Respect mute and reduced motion.
 
-- [ ] **P0 — Give the encounter a meaningful payoff.** Recovered letters belong to a named shop. Approaching the delivery point draws a readable route ribbon; passing its generous delivery volume sends the letters to a mailbox, restores that shop's neon pictogram and reveals a tiny original postcard. The first run should answer “what am I doing, where am I going, and what changed because of me?” Scenic stays forgiving and solo hull remains unlimited; better lines earn elegant delivery grades rather than making relaxed play a failure.
+- [x] **P0 — Add a named delivery and visible restoration payoff.** Recovered letters belong to Nightjar Radio. Approaching the delivery point draws separated chevrons; passing its generous delivery volume sends the letters to a mailbox, restores the station's sign/windows/aerial and reveals an original postcard. The first run should answer “what am I doing, where am I going, and what changed because of me?” Scenic stays forgiving and solo hull remains unlimited; better lines earn delivery grades rather than making relaxed play a failure. The postcard is a run result; a persistent collection is still P2.
 
 Slice acceptance: actually fly it on desktop and phone; compare to the current sphere loop. Check target recognition, aiming reliability, clarity of collection/delivery, whether players notice the shop changing, and whether they voluntarily replay for a cleaner route. Record observations rather than assuming an effect increases retention. Defer persistent progression and the boss until this slice feels good.
 

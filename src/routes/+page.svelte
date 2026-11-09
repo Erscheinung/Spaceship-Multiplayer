@@ -5,18 +5,22 @@
   import { FLIGHT_SPEED } from '$lib/game/course.js';
   import { TiltInput } from '$lib/game/TiltInput.js';
   import { MusicController } from '$lib/audio/MusicController.js';
+  import { DeliveryAudio } from '$lib/audio/DeliveryAudio.js';
   let canvas, engine, network, Engine, PeerSession;
   let screen = 'menu', code = '', room = '', status = '', error = '', busy = false, ready = false, solo = false, host = true;
-  let difficulty='normal', shipColor='cyan', controlMode='drag', sensitivity=1, tilt, controlMessage='', boostHeld=false, liftHeld=false, stick={x:0,z:0};
+  let routeMode='delivery', difficulty='normal', shipColor='cyan', controlMode='drag', sensitivity=1, tilt, controlMessage='', boostHeld=false, liftHeld=false, stick={x:0,z:0};
   let flags = [false, false], hud = null, copied = false, telemetry = { fps: 0, packetLoss: null }, replayPending = false;
   let damageNotice = '', damageFlash = false, damageNoticeTimer;
   let steeringBoost = false, steeringPointer = null;
+  let deliveryAudio, lastDelivery = null;
   let music, musicMuted = false, musicBlocked = false;
   let recovering = false, tiltEnabled = false, tiltBusy = false, tiltAttempt = 0;
   let lightingPreset = 'auto';
   $: paused = recovering || flags.some(Boolean);
   $: me = host ? 0 : 1;
   $: playing = screen === 'game';
+  $: delivery = hud?.delivery;
+  $: deliveryHint = !delivery ? '' : delivery.restored ? 'Nightjar is on the air again.' : delivery.phase === 'arrival' || delivery.destination ? 'Follow the chevrons. Fly through the mailbox bracket.' : (hud?.time ?? 0) < 8 ? 'Nightjar has gone quiet. Recover its lost mail.' : (hud?.time ?? 0) < 30 ? 'Static moths · line up with their opening wings.' : (hud?.time ?? 0) < 56 ? 'Parcel train · break the first seal. Follow the chain.' : 'Sign crab · climb toward its open repair socket.';
   const time = seconds => `${String(Math.floor((seconds || 0) / 60)).padStart(2, '0')}:${String(Math.floor((seconds || 0) % 60)).padStart(2, '0')}`;
 
   onMount(() => {
@@ -29,26 +33,29 @@
     };
     document.addEventListener('contextmenu',preventGameSelection);
     document.addEventListener('selectstart',preventGameSelection);
-    music = new MusicController();
+    music = new MusicController(); deliveryAudio = new DeliveryAudio();
     musicMuted = music.muted;
     Promise.all([import('$lib/game/Engine.js'), import('$lib/net/PeerSession.js')]).then(([game, net]) => {
       if (disposed) return; Engine = game.Engine; PeerSession = net.PeerSession; initEngine();
     }).catch(e => { error = `Unable to initialize graphics: ${e.message}`; });
     tilt=new TiltInput((value,message)=>{if(message){controlMessage=message;tiltEnabled=false;releaseFlightControls();controlMode='drag';}if(value&&playing&&!paused&&controlMode==='tilt'&&engine)engine.touch={x:value.x*sensitivity,z:value.z*sensitivity};});
-    return () => { disposed = true; tiltAttempt++; document.removeEventListener('contextmenu',preventGameSelection); document.removeEventListener('selectstart',preventGameSelection); clearTimeout(damageNoticeTimer); tilt?.disable(); music?.destroy(); engine?.destroy(); network?.destroy(); };
+    return () => { disposed = true; tiltAttempt++; document.removeEventListener('contextmenu',preventGameSelection); document.removeEventListener('selectstart',preventGameSelection); clearTimeout(damageNoticeTimer); tilt?.disable(); music?.destroy(); deliveryAudio?.destroy(); engine?.destroy(); network?.destroy(); };
 
   });
   function tryPlayMusic() {
     if (!music || musicMuted || recovering || document.hidden) return;
+    deliveryAudio?.unlock();
     void music.play().then(ok => { musicBlocked = !ok && music.blocked; });
   }
   function unlockMusic() {
+    if (!musicMuted) deliveryAudio?.unlock();
     if (!music || musicMuted) return;
     void music.unlock().then(ok => { musicBlocked = !ok && music.blocked; });
   }
   function toggleMusic() {
     if (!music) return;
     musicMuted = music.toggleMuted();
+    if (musicMuted) deliveryAudio?.stop(); else deliveryAudio?.unlock();
     musicBlocked = false;
     if (!musicMuted && playing && !paused && !hud?.over && !error) tryPlayMusic();
   }
@@ -60,6 +67,13 @@
   function updateHud(next) {
     const previousHp = hud?.players?.[me]?.hp;
     const currentHp = next?.players?.[me]?.hp;
+    const mail = next?.delivery;
+    if (mail && lastDelivery && !musicMuted && !paused && !error && !document.hidden) {
+      if (mail.restored && !lastDelivery.restored) deliveryAudio?.play('delivery');
+      else if (mail.recovered + mail.bulbs > lastDelivery.recovered + lastDelivery.bulbs) deliveryAudio?.play('collect', mail.recovered);
+      else if (mail.targets?.some(target => target.completedAt != null && !lastDelivery.completedIds.has(target.id))) deliveryAudio?.play('release', mail.recovered);
+    }
+    lastDelivery = mail ? { recovered: mail.recovered, bulbs: mail.bulbs, restored: mail.restored, completedIds: new Set(mail.targets?.filter(target => target.completedAt != null).map(target => target.id)) } : null;
     hud = next;
     if (Number.isFinite(previousHp) && Number.isFinite(currentHp) && currentHp < previousHp && !next?.over && !paused && !error) {
       damageNotice = `HULL HIT · ${currentHp}/5`;
@@ -67,7 +81,7 @@
       clearTimeout(damageNoticeTimer);
       damageNoticeTimer = setTimeout(() => { damageNotice = ''; damageFlash = false; }, 1800);
     }
-    if (next?.over) { clearDamageFeedback(); releaseFlightControls(); music?.pause(); }
+    if (next?.over) { clearDamageFeedback(); releaseFlightControls(); music?.pause(); deliveryAudio?.stop(); }
   }
   function initEngine() {
     try { engine = new Engine(canvas, { onHud: updateHud, onStats: stats => { telemetry = stats; }, onPause: togglePause, onError: fail, lightingPreset }); ready = true; }
@@ -85,9 +99,10 @@
     try { globalThis.localStorage?.setItem(LIGHTING_PRESET_STORAGE_KEY, next); } catch { /* private browsing/storage denial is harmless */ }
     engine?.setLightingPreset?.(next);
   }
-  function fail(message) { error = message; busy = false; status = ''; replayPending = false; clearDamageFeedback(); music?.pause(); if (playing) { flags = [true, true]; engine?.setPaused(true); releaseFlightControls(); } }
-  function start(settings = {difficulty, colors:[shipColor,'coral']}) {
-    busy = false; screen = 'game'; hud = null; flags = [false, false]; replayPending = false; telemetry = { fps: 0, packetLoss: null }; clearDamageFeedback();
+  function fail(message) { error = message; busy = false; status = ''; replayPending = false; clearDamageFeedback(); music?.pause(); deliveryAudio?.stop(); if (playing) { flags = [true, true]; engine?.setPaused(true); releaseFlightControls(); } }
+  function start(settings = {mode:routeMode, difficulty, colors:[shipColor,'coral']}) {
+    busy = false; screen = 'game'; hud = null; lastDelivery = null; flags = [false, false]; replayPending = false; telemetry = { fps: 0, packetLoss: null }; clearDamageFeedback();
+    if (settings.mode) routeMode = settings.mode;
     if (settings.difficulty) difficulty = settings.difficulty;
     if (settings.colors?.[host ? 0 : 1]) shipColor = settings.colors[host ? 0 : 1];
     releaseFlightControls();
@@ -109,7 +124,7 @@
       pause: value => {
         flags = value;
         const stopped = recovering || flags.some(Boolean) || Boolean(hud?.over) || Boolean(error);
-        if (stopped) { clearDamageFeedback(); releaseFlightControls(); music?.pause(); }
+        if (stopped) { clearDamageFeedback(); releaseFlightControls(); music?.pause(); deliveryAudio?.stop(); }
         else if (playing) tryPlayMusic();
         engine.setPaused(stopped);
       },
@@ -117,11 +132,11 @@
         recovering = value;
         const stopped = value || flags.some(Boolean) || Boolean(hud?.over) || Boolean(error);
         engine.setPaused(stopped);
-        if (stopped) { releaseFlightControls(); music?.pause(); }
+        if (stopped) { releaseFlightControls(); music?.pause(); deliveryAudio?.stop(); }
         else tryPlayMusic();
       },
       error: fail, status: value => status=value
-    }, {difficulty,colors:[shipColor,'coral']});
+    }, {mode:routeMode,difficulty,colors:[shipColor,'coral']});
     network = session;
     try { if (create) await session.create(); else { room = code.toUpperCase(); await session.join(room); } }
     catch (e) { if (network === session) { fail(e.message); session.destroy(); } }
@@ -132,12 +147,12 @@
     const next = force === true ? true : !flags[me];
     flags = flags.map((v, i) => i === me ? next : v);
     // Freeze immediately on the requesting peer; host acknowledgement reconciles it.
-    engine.setPaused(flags.some(Boolean)); if (flags.some(Boolean)) { clearDamageFeedback(); music?.pause(); } else tryPlayMusic(); releaseFlightControls();
+    engine.setPaused(flags.some(Boolean)); if (flags.some(Boolean)) { clearDamageFeedback(); music?.pause(); deliveryAudio?.stop(); } else tryPlayMusic(); releaseFlightControls();
     if (!solo) network.setPaused(next);
   }
   function menu() {
     recovering = false;
-    network?.destroy(); network = null; engine?.destroy(); engine = null; music?.stop(); musicBlocked = false;
+    network?.destroy(); network = null; engine?.destroy(); engine = null; music?.stop(); deliveryAudio?.stop(); musicBlocked = false;
     screen = 'menu'; flags = [false, false]; hud = null; error = ''; busy = false; status = ''; replayPending = false; telemetry = { fps: 0, packetLoss: null }; clearDamageFeedback(); initEngine();
   }
   async function copy() { try { await navigator.clipboard.writeText(room); copied = true; setTimeout(() => copied = false, 1500); } catch { status = 'Select and copy the room code below.'; } }
@@ -174,7 +189,7 @@
     engine.touch={x:stick.x*sensitivity,z:stick.z*sensitivity}; engine.actions.boost = boostHeld;
   }
   function replayHost() {
-    const settings = hud?.settings ?? { difficulty, colors: [shipColor, 'coral'] };
+    const settings = hud?.settings ?? { mode:routeMode, difficulty, colors: [shipColor, 'coral'] };
     if (solo) { start(settings); return; }
     if (!network?.connection?.open) { error = 'Your wingmate is unavailable. Return to the terminal to reconnect.'; return; }
     network.replay(settings);
@@ -216,15 +231,18 @@
       <section class="hero">
         <p class="eyebrow"><span></span> TWO PILOTS. ONE FREQUENCY.</p>
         <h1>TAKE THE<br /><em>SCENIC ROUTE.</em></h1>
-        {#if screen === 'menu'}<button class="quick-start" onclick={practice} disabled={!ready || busy}><span class="desktop-start">PRESS SPACE TO START</span><span class="phone-start">TAP TO START</span><small>SOLO PRACTICE ↗</small></button>{/if}
-        <p class="intro">A little altitude. A lot of close calls.<br />Find your wingmate and thread the waking city.</p>
-        <div class="hero-tags"><span>01 — EVADE</span><span>02 — EVOLVE</span><span>03 — ENDURE</span></div>
+        {#if screen === 'menu'}<button class="quick-start" onclick={practice} disabled={!ready || busy}><span class="desktop-start">PRESS SPACE TO START</span><span class="phone-start">TAP TO START</span><small>{routeMode === 'delivery' ? '90-SECOND MAIL ROUTE ↗' : 'ENDLESS SOLO PRACTICE ↗'}</small></button>{/if}
+        <p class="intro">A little courier. A city waiting to hear from you.<br />Find the lost night mail. Bring Nightjar Radio back to life.</p>
+        <div class="hero-tags"><span>01 — UNFOLD</span><span>02 — RECOVER</span><span>03 — DELIVER</span></div>
       </section>
 
       <section class="launch-panel" aria-label="Flight controls">
         <div class="panel-top"><span>FLIGHT TERMINAL</span><span class="terminal-bars">▂ ▄ ▆ █</span></div>
         {#if screen !== 'lobby'}
           <div class="flight-setup">
+            <label for="route-mode">YOUR ROUTE {screen === 'join' ? '— HOST DECIDES' : ''}</label>
+            <select id="route-mode" bind:value={routeMode} disabled={busy || screen === 'join'}><option value="delivery">Lost Night Mail · 90 seconds</option><option value="survival">Endless skyway · Survival</option></select>
+            <p class="setup-note">{routeMode === 'delivery' ? 'Recover letters and bulbs, then fly through Nightjar’s mailbox bracket. Solo or together.' : 'The original endless flight. Dodge rocks and collect upgrades.'}</p>
             <label for="difficulty">FLIGHT DIFFICULTY {screen === 'join' ? '— HOST DECIDES' : ''}</label>
             <select id="difficulty" bind:value={difficulty} disabled={busy || screen === 'join'}>{#each Object.entries(DIFFICULTIES) as [key,value]}<option value={key}>{value.label}</option>{/each}</select>
             <p class="setup-note">{difficulty==='brutal' ? 'No aim assist. Line up in height and direction. Double damage.' : difficulty==='easy' ? 'A gentler flight with assisted aim.' : 'Faster threats, assisted aim. Stay on the move.'}</p>
@@ -264,19 +282,19 @@
         <div class="panel-bottom"><span class="live-dot"></span> WEBRTC DIRECT LINK <span>2 PLAYERS MAX</span></div>
       </section>
 
-      <div class="flight-guide"><div><span class="guide-number">01</span><p><strong>Find your flow</strong><small><kbd>W A S D</kbd> or arrow keys to move</small></p></div><div><span class="guide-number">02</span><p><strong>Let it rain</strong><small>Auto-fire targets the nearest threat</small></p></div><div><span class="guide-number">03</span><p><strong>Chase the glow</strong><small>SHIFT or outer-drag to boost · Hold SPACE to climb</small></p></div></div>
+      <div class="flight-guide"><div><span class="guide-number">01</span><p><strong>Find your flow</strong><small><kbd>W A S D</kbd> or arrow keys to move</small></p></div><div><span class="guide-number">02</span><p><strong>Let it rain</strong><small>Align with opening wings, seals and repair sockets</small></p></div><div><span class="guide-number">03</span><p><strong>Chase the glow</strong><small>SHIFT or outer-drag to boost · Hold SPACE to climb</small></p></div></div>
     </main>
     <footer><span>POSTCARDS FROM THE FAST LANE.</span><span><i class="cyan"></i> YOUR COLOR <i class="pink"></i> YOUR WINGMATE</span><span>HEADPHONES OFF. THRUSTERS ON.</span></footer>
   {:else}
     <div class="hud">
-      <div class="pilot-card" class:damage-flash={damageFlash}><span class="eyebrow">{(hud?.settings?.colors[me] ?? shipColor).toUpperCase()} / YOU</span><div class="health" role="img" aria-label={solo ? "Unlimited hull" : `Hull integrity: ${hud?.players[me]?.hp ?? 5} of 5`} style:--ship-color={SHIP_COLORS[hud?.settings?.colors[me] ?? shipColor]}>{#if solo}<span aria-hidden="true">♥ ∞</span>{:else}{#each Array(5) as _, i}<span class:empty={i >= (hud?.players[me]?.hp ?? 5)} aria-hidden="true">♥</span>{/each}{/if}</div><small>RATE {hud?.players[me]?.rate ?? 0} <b>/</b> SPREAD {1 + (hud?.players[me]?.spread ?? 0) * 2}</small>{#if !paused && !hud?.over && !error}<div class="telemetry-strip" aria-label="Flight telemetry"><span>FPS <b>{telemetry.fps || '—'}</b></span><span>PKT <b>{solo || telemetry.packetLoss == null ? '—' : `${Math.round(telemetry.packetLoss * 100)}%`}</b></span></div>{/if}{#if damageNotice && !paused && !hud?.over && !error}<div class="damage-feedback" role="status" aria-live="polite" aria-atomic="true">{damageNotice}</div>{/if}</div>
-      <div class="run-stats"><span>SECTOR {String(hud?.wave ?? 1).padStart(2, '0')}</span><strong>{time(hud?.time)}</strong><small>{String(hud?.score ?? 0).padStart(6, '0')} PTS</small></div>
+      <div class="pilot-card" class:damage-flash={damageFlash}><span class="eyebrow">{(hud?.settings?.colors[me] ?? shipColor).toUpperCase()} / YOU</span><div class="health" role="img" aria-label={solo ? "Unlimited hull" : `Hull integrity: ${hud?.players[me]?.hp ?? 5} of 5`} style:--ship-color={SHIP_COLORS[hud?.settings?.colors[me] ?? shipColor]}>{#if solo}<span aria-hidden="true">♥ ∞</span>{:else}{#each Array(5) as _, i}<span class:empty={i >= (hud?.players[me]?.hp ?? 5)} aria-hidden="true">♥</span>{/each}{/if}</div><small>{#if delivery}AFTERLIGHT COURIER{:else}RATE {hud?.players[me]?.rate ?? 0} <b>/</b> SPREAD {1 + (hud?.players[me]?.spread ?? 0) * 2}{/if}</small>{#if !paused && !hud?.over && !error}<div class="telemetry-strip" aria-label="Flight telemetry"><span>FPS <b>{telemetry.fps || '—'}</b></span><span>PKT <b>{solo || telemetry.packetLoss == null ? '—' : `${Math.round(telemetry.packetLoss * 100)}%`}</b></span></div>{/if}{#if damageNotice && !paused && !hud?.over && !error}<div class="damage-feedback" role="status" aria-live="polite" aria-atomic="true">{damageNotice}</div>{/if}</div>
+      <div class="run-stats"><span>{delivery ? 'MAIL ROUTE 01' : `SECTOR ${String(hud?.wave ?? 1).padStart(2, '0')}`}</span><strong>{time(hud?.time)}</strong><small>{String(hud?.score ?? 0).padStart(6, '0')} PTS</small></div>
       <button class="pause-button" onclick={() => togglePause()} disabled={!!hud?.over || !!error}>Ⅱ <span>ESC / PAUSE</span></button>
     </div>
     {#if !solo}<div class="wingmate-status">WINGMATE <span class:down={hud?.players[1-me]?.hp === 0}>{hud?.players[1-me]?.hp === 0 ? 'SIGNAL LOST — KEEP FLYING' : `${hud?.players[1-me]?.hp ?? 5}/5 HULL`}</span></div>{/if}
     <div class="flight-instruments"><span>SPD <b data-testid="speed">{Math.round((FLIGHT_SPEED+(hud?.players[me]?.boost ?? 0))*3.6)}</b> km/h</span><span>ALT <b data-testid="altitude">{Math.round((hud?.players[me]?.y ?? 0)+4)}</b> m</span><span>{(hud?.settings?.difficulty ?? difficulty).toUpperCase()}</span></div>
-    <div class="route-label"><span>SHIFT / BOOST · SPACE / CLIMB</span><strong>The Afterlight Skyway</strong></div>
-    <div class="game-hint">BANK THROUGH THE SKYWAY <span>◇</span> COLLECT UPGRADE CORES <span>◇</span> {hud?.settings?.difficulty==='brutal' ? 'ALIGN YOUR SHOTS' : 'WEAPONS AUTO-FIRE'}</div>
+    {#if delivery}<aside class="delivery-status" aria-label="Delivery route"><span class="delivery-address">AFTERLIGHT POST → NIGHTJAR RADIO</span><div><strong>✉ {delivery.recovered ?? 0}</strong><span>LETTERS</span><strong>◇ {delivery.bulbs ?? 0}</strong><span>BULBS</span></div><p aria-live="polite">{deliveryHint}</p><div class="delivery-progress" role="progressbar" aria-label="Route progress" aria-valuenow={Math.min(90, Math.floor(hud?.time ?? 0))} aria-valuemin="0" aria-valuemax="90"><i style:width={`${Math.min(100, (hud?.time ?? 0) / 90 * 100)}%`}></i></div></aside>{:else}<div class="route-label"><span>SHIFT / BOOST · SPACE / CLIMB</span><strong>The Afterlight Skyway</strong></div>{/if}
+    <div class="game-hint">{delivery ? 'RECOVER THE LOST NIGHT MAIL' : 'BANK THROUGH THE SKYWAY'} <span>◇</span> {delivery ? 'DELIVER TO NIGHTJAR RADIO' : 'COLLECT UPGRADE CORES'} <span>◇</span> {hud?.settings?.difficulty==='brutal' ? 'ALIGN YOUR SHOTS' : 'WEAPONS AUTO-FIRE'}</div>
     {#if !paused && !hud?.over && !error}<div class="touch-controls">
       {#if controlMode==='drag'}<button aria-label="Drag to steer" class:boost-active={steeringBoost} class="touch-pad" onpointerdown={touchMove} onpointermove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))touchMove(e);}} onpointerup={releaseSteering} onpointercancel={releaseSteering} onlostpointercapture={releaseSteering}><span class="touch-stick" style:transform={`translate(${stick.x*28}px,${stick.z*28}px)`}>✥</span><span class="touch-boost-badge" aria-live="polite">{steeringBoost ? 'BOOST' : ''}</span></button>{:else}<button class="calibrate" disabled={tiltBusy} onclick={tiltEnabled ? ()=>tilt.calibrate() : enableTilt}>◎<br/>{tiltEnabled ? 'CALIBRATE TILT' : 'ENABLE TILT'}</button>{/if}
       <span class="touch-label">{controlMode==='drag'?(steeringBoost?'OUTER BOOST ACTIVE':'DRAG TO STEER · PULL OUT TO BOOST'):'TILT TO STEER · HOLD CLIMB TO RISE'}</span>
@@ -285,14 +303,15 @@
     </div>{/if}
     {#if paused || hud?.over || error}
       <div class="overlay"><div class="pause-panel" role="dialog" aria-modal="true" aria-label={hud?.over ? 'Run complete' : 'Flight paused'} tabindex="-1" use:focusModal>
-        <p class="eyebrow">{error ? 'LINK INTERRUPTED' : hud?.over ? 'END OF TRANSMISSION' : 'FREQUENCY ON HOLD'}</p>
-        <h2>{error ? 'Signal lost.' : recovering ? 'Restoring your route.' : hud?.over ? 'Into the afterlight.' : 'Catch your breath.'}</h2>
-        <p role="status">{error || (recovering ? `${status} Your flight is held while the link recovers.` : hud?.over ? 'The city takes this one. Your next run is waiting.' : solo ? 'Your run is paused.' : 'Both ships are paused. Each pilot must clear their own pause to resume.')}</p>
+        <p class="eyebrow">{error ? 'LINK INTERRUPTED' : hud?.over ? delivery ? 'AFTERLIGHT POST / ROUTE 01' : 'END OF TRANSMISSION' : 'FREQUENCY ON HOLD'}</p>
+        <h2>{error ? 'Signal lost.' : recovering ? 'Restoring your route.' : hud?.over ? delivery ? delivery.restored ? 'Back on the air.' : 'One more delivery?' : 'Into the afterlight.' : 'Catch your breath.'}</h2>
+        <p role="status">{error || (recovering ? `${status} Your flight is held while the link recovers.` : hud?.over ? delivery ? delivery.restored ? 'Your mail reached Nightjar. The neighborhood can hear us again.' : 'Nightjar is still waiting. Recover a letter, then follow the chevrons into the delivery bracket.' : 'The city takes this one. Your next run is waiting.' : solo ? 'Your run is paused.' : 'Both ships are paused. Each pilot must clear their own pause to resume.')}</p>
+        {#if hud?.over && delivery?.restored}<figure class="delivery-postcard" aria-label="Postcard from Nightjar Radio"><div class="postcard-art" aria-hidden="true"><span class="postcard-moon">☾</span><span class="postcard-waves">)))</span><span class="postcard-aerial">╱│╲</span><span class="postcard-shop">NIGHTJAR<br/><b>RADIO</b></span><span class="postcard-stamp">✉<small>AFTERLIGHT<br/>DELIVERED</small></span></div><figcaption>“The neighborhood can hear us again.”<small>— Nightjar Radio · {delivery.grade ?? 'DELIVERED'} · {delivery.delivered ?? delivery.recovered} {(delivery.delivered ?? delivery.recovered) === 1 ? 'letter' : 'letters'}</small></figcaption></figure>{/if}
         <button class="music-toggle pause-music-toggle" class:muted={musicMuted} type="button" aria-pressed={musicMuted} aria-label={musicMuted ? 'Unmute music' : 'Mute music'} onclick={toggleMusic}><span aria-hidden="true">{musicMuted ? '♫̸' : '♫'}</span> {musicMuted ? 'MUSIC OFF' : 'MUSIC ON'}</button>
         {#if musicBlocked && !musicMuted}<p class="music-note" role="status">Music playback was blocked. Resume to try again.</p>{/if}
-<div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='tilt'}<button type="button" class="tilt-enable" disabled={tiltBusy} onclick={tiltEnabled ? ()=>tilt.calibrate() : enableTilt}>{tiltBusy ? 'ALLOW MOTION ACCESS…' : tiltEnabled ? 'CALIBRATE TILT' : 'ENABLE TILT'}</button>{/if}{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
+{#if !hud?.over}<div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='tilt'}<button type="button" class="tilt-enable" disabled={tiltBusy} onclick={tiltEnabled ? ()=>tilt.calibrate() : enableTilt}>{tiltBusy ? 'ALLOW MOTION ACCESS…' : tiltEnabled ? 'CALIBRATE TILT' : 'ENABLE TILT'}</button>{/if}{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
         <div class="control-settings"><label for="pause-lighting-preset">TIME OF DAY</label><select id="pause-lighting-preset" value={lightingPreset} onchange={e => setLightingPreset(e.currentTarget.value)}>{#each LIGHTING_PRESET_OPTIONS as option}<option value={option.value}>{option.label}</option>{/each}</select>{#if lightingPreset === 'auto'}<p class="setup-note">Auto follows your device’s local time.</p>{/if}</div>
-        <div class="end-stats"><div><small>SURVIVED</small><strong>{time(hud?.time)}</strong></div><div><small>TEAM SCORE</small><strong>{hud?.score ?? 0}</strong></div></div>
+        {/if}<div class="end-stats"><div><small>{delivery ? 'ROUTE TIME' : 'SURVIVED'}</small><strong>{time(hud?.time)}</strong></div><div><small>TEAM SCORE</small><strong>{hud?.score ?? 0}</strong></div></div>
         {#if !hud?.over && !error}<button class="primary full" onclick={() => togglePause()} disabled={recovering || !flags[me]}>{recovering ? 'RESTORING LINK…' : flags[me] ? 'RESUME FLIGHT' : 'WAITING FOR WINGMATE'} <span>→</span></button>{/if}
         {#if hud?.over}<button class="primary full" onclick={playAgain} disabled={replayPending || (!solo && !network?.connection?.open)}>{replayPending ? 'WAITING FOR WINGMATE…' : 'PLAY AGAIN'} <span>↻</span></button>{/if}
         <button class="secondary full" onclick={menu}>RETURN TO TERMINAL</button>

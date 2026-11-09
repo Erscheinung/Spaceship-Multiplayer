@@ -5,6 +5,7 @@ export const DIFFICULTIES = {
   brutal: { label: 'Brutal', spawn: .38, speed: 1.7, damage: 2, aim: false, repairSeconds: 0 }
 };
 export function flightSettings(value = {}) {
-  return { difficulty: Object.hasOwn(DIFFICULTIES, value.difficulty) ? value.difficulty : 'normal',
+  return { mode: value.mode === 'delivery' ? 'delivery' : 'survival',
+    difficulty: Object.hasOwn(DIFFICULTIES, value.difficulty) ? value.difficulty : 'normal',
     colors: [0, 1].map(i => Object.hasOwn(SHIP_COLORS, value.colors?.[i]) ? value.colors[i] : i ? 'coral' : 'cyan') };
 }

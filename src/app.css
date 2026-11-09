@@ -100,3 +100,16 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
 .in-game .brand{background:#f7f0dedb;padding:5px 8px;border:1px solid #40546144}
 .in-game .game-hint{color:#f4e7c8;text-shadow:0 1px 3px #182e43}
 .in-game .route-label{background:#f7f0dedb;padding:7px 12px;text-shadow:none}
+
+/* Lost Night Mail: a small address slip leaves the flight lane open. */
+.delivery-status{position:fixed;left:28px;top:228px;width:270px;padding:12px 14px;background:#f7f0deed;border:1px solid #40546188;border-left:3px solid #b65c4b;color:#293e49;box-shadow:3px 3px 0 #293e4920}
+.delivery-address{font-size:8px;font-weight:700;letter-spacing:1px;display:block;margin-bottom:9px}
+.delivery-status>div:not(.delivery-progress){display:flex;align-items:baseline;gap:8px}.delivery-status strong{font-size:20px;font-weight:500}.delivery-status div>span{font-size:7px;letter-spacing:1px;margin-right:8px}
+.delivery-status p{font-size:11px;line-height:1.5;margin:8px 0 10px;min-height:33px}.delivery-progress{height:3px;background:#b7c8c1}.delivery-progress i{display:block;height:100%;background:#237f85}
+.delivery-postcard{margin:12px 0 18px;border:1px solid #4b6571;padding:8px;background:#fcf6df;transform:rotate(-1deg)}
+.postcard-art{height:140px;position:relative;overflow:hidden;background:linear-gradient(#243c65,#917f9e 72%,#edb877 73%);color:#fff3c9}
+.postcard-moon{position:absolute;left:12%;top:7%;font-size:44px;transform:rotate(-20deg)}.postcard-waves{position:absolute;top:10px;left:56%;font-size:25px;letter-spacing:5px;transform:rotate(-25deg);color:#f1b965}.postcard-aerial{position:absolute;left:42%;top:4px;font-size:43px;color:#f1b965}
+.postcard-shop{position:absolute;bottom:10px;left:20%;padding:11px 20px 9px;background:#293e60;border:3px solid #dfba91;box-shadow:-18px 12px 0 #c2818e,18px 12px 0 #83b9b1;text-align:center;letter-spacing:4px;font-size:14px}.postcard-shop b{font-size:21px;font-weight:500;letter-spacing:8px}.postcard-stamp{position:absolute;right:8px;top:8px;padding:7px;background:#f3e2ba;color:#294b63;border:2px dashed #637c87;text-align:center;font-size:21px;transform:rotate(9deg)}.postcard-stamp small{display:block;font-size:5px;line-height:1.4;letter-spacing:1px}
+.delivery-postcard figcaption{font-size:12px;line-height:1.5;text-align:center;padding:10px 3px 3px}.delivery-postcard figcaption small{display:block;font-size:9px;margin-top:5px;color:#63777b}
+@media(max-width:680px),(pointer:coarse){.delivery-status{top:auto;bottom:191px;left:14px;width:225px;padding:8px 10px}.delivery-address{font-size:7px;margin-bottom:4px}.delivery-status strong{font-size:17px}.delivery-status p{font-size:10px;min-height:28px;margin:4px 0 6px}.delivery-status div>span{font-size:6px}.delivery-postcard .postcard-art{height:118px}}
+@media(max-height:500px){.delivery-status{top:auto;bottom:12px;left:auto;right:100px;width:230px;padding:7px 9px}.delivery-status p{min-height:0;margin:3px 0;font-size:9px}.delivery-address{font-size:6px;margin-bottom:2px}}

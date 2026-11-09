@@ -1,6 +1,6 @@
 # NEON WING
 
-A two-player illustrated city flight survival game built with **SvelteKit + pure Three.js + PeerJS**. Follow a banking chase camera along an elevated skyway with hairpins, climbs and descending bends, dodge poles and overhead gates, evade orange asteroids, and collect upgrades while assisted weapons target nearby threats within a forward cone.
+A two-player illustrated courier flight game built with **SvelteKit + pure Three.js + PeerJS**. Recover the lost night mail and bring Nightjar Radio back to life, or choose the original endless survival flight. Follow a banking chase camera along an elevated skyway with hairpins, climbs and descending bends.
 
 The illustrated direction reinterprets the outlined architecture and street-level composition of [Messenger by Abeto](https://messenger.abeto.co). All geometry is original and generated in JavaScript; no Blender, downloaded models, or copied reference assets. A bundled illustrated material atlas supplies tactile timber, masonry, ceramics, plaster, roofs, cloth and paving; its [source and generation prompt](docs/texture-assets.md) are included. The licensed soundtrack is credited below.
 
@@ -27,6 +27,14 @@ For two devices on the same Wi-Fi, open the Network URL printed by Vite on the s
 
 ## Controls and gameplay
 
+The terminal defaults to **Lost Night Mail**, a roughly 90-second delivery route playable solo or together. The host chooses the route and difficulty. **Endless skyway** keeps the original rocks, upgrades and scaling survival loop.
+
+Static Moths open their broad wings to expose stolen bulbs; line up with the chest when it opens. The Runaway Parcel Train carries a chain of wax seals: release the leading seal to start the domino sequence. The Sign Crab opens a repair socket above the safe low line; climb toward it for an optional repair reward. Weapons remain forward-facing. Collected letters and bulbs fill a small mail rack behind the ship and the address slip shows the shared tally.
+
+During the final approach, follow the chevrons and fly through Nightjar Radio’s generous mailbox bracket. Delivering recovered mail restores the named shop’s sign, opens its aerial and lights its windows; an original postcard marks a successful arrival. Missing the mail or destination offers a retry. Solo hull stays unlimited. Pause and connection recovery hold the route clock; replay begins with an empty rack. Persistent postcard collections, The Night Sorter and the larger neighborhood roadmap remain future proposals. Both pilots must reload for protocol `neon-wing-city-v8`.
+
+The music mute switch also silences the original synthesized release, collection and delivery motifs. Reduced motion keeps interaction cues while reducing decorative movement.
+
 | Action | Control |
 | --- | --- |
 | Start solo | Space in the main terminal or tap the pulsing prompt |
@@ -40,13 +48,13 @@ For two devices on the same Wi-Fi, open the Network URL printed by Vite on the s
 | Touch climb | Hold the CLIMB button while steering |
 | Upgrade | Fly near cores to attract and collect them |
 
-- Cyan cores increase fire rate (eight levels); magenta cores add spread (up to five projectiles). Assisted fire selects rocks ahead within 110 forward units and a 30° 3D cone, launching from ahead of the nose. It ignores threats behind, far outside the flight direction, or out of range; Brutal fires straight forward.
+- In endless survival, cyan cores increase fire rate (eight levels); magenta cores add spread (up to five projectiles). Assisted fire selects exposed targets ahead within 110 forward units and a 30° 3D cone, launching from ahead of the nose. It ignores threats behind, far outside the flight direction, or out of range; Brutal fires straight forward.
 - Select Scenic, Survival, or Brutal before launch. The host sets the shared difficulty; each pilot independently chooses cyan, coral, gold, violet, or mint. Brutal has faster spawns, double damage, and no assisted aim: align horizontally and vertically.
 - Each pilot cruises at approximately 140 km/h and can pull beyond the drag-pad ring for a substantially faster boost (up to approximately 260 km/h); release the outer drag to coast back to cruise. Desktop pilots hold Shift for the same boost. Altitude ranges from 4 to 32 metres above the street. Hold climb to clear rooftops; release to descend. Enemies, shots, drops, and building collisions all account for altitude.
 - The route rises above the city, banks through hairpins and doubles back in world space. Steering and altitude are relative to its banked surface. Curves push the ship outward, especially under boost: countersteer to stay inside the guard fields. Boundary crashes damage hull and reduce boost. Solid towers, striped poles and overhead gates share their rendered geometry with host collision volumes; gates require flying above or below. Collisions push the ship clear and slow it down. Scenic/Survival hits cost one hull point; Brutal hits cost two. The floor retains a hover assist.
 - Both ships have five hull points. Hits briefly grant invulnerability.
 - One downed pilot can spectate while the other survives; the run ends when both are down. Choose Play Again on the end screen to restart the same solo/co-op session when the wingmate is still connected, or return to the terminal to reconnect.
-- Enemy arrival rate increases continuously; speed increases each 25-second sector. Spawns and projectile lifetimes are capped to bound resource use.
+- Endless survival’s enemy arrival rate increases continuously; speed increases each 25-second sector. Lost Night Mail uses authored encounter phrases and quiet recovery stretches. Spawns and projectile lifetimes are capped to bound resource use.
 - Either player can pause. Each pilot clears their own pause flag; both must be clear before the shared run resumes. Backgrounding a tab also pauses it.
 
 ## Verify
@@ -64,6 +72,14 @@ Automated browser tests exercise actual WebGL rendering, solo pause/resume, mobi
 npx playwright install chromium
 npm run test:e2e
 ```
+
+The delivery checks include a full route using ordinary flight inputs, a successful postcard/replay, and real two-peer mail state across pause, transport recovery and replay. To capture complete desktop/day and portrait/night delivery flights against a running **Vite development server**, use:
+
+```sh
+GRAPHICS_URL=http://127.0.0.1:5185 node scripts/validate-delivery.mjs
+```
+
+The capture tool uses native Metal on macOS; `--software` selects the portable software path. It writes `docs/screenshots/mail-*.png` and the ignored `test-results/delivery-visual-report.json`. Its engine access is injected by the test's request interception; production has no debug hook. Run timing captures separately from other browser/GPU tests. See [delivery observations and renderer measurements](docs/graphics-validation.md).
 
 For cloud-synced Documents folders, ensure dependency files are fully downloaded. If the dev watcher reloads unchanged source/generated files mid-test, use a fully local checkout outside that synced folder; see the [validation environment notes](docs/graphics-validation.md).
 
@@ -96,7 +112,7 @@ Host browser ←──── direct WebRTC data channel ────→ Guest br
   20 Hz snapshots ────────────────────────────────→ predicted guest movement
 ```
 
-The four-character uppercase alphanumeric room code **is the host's Peer ID**. Code collisions retry up to eight times. A host accepts one guest with the matching protocol version (`neon-wing-city-v7`, incompatible with earlier builds) and rejects additional connections. Four characters are intended for casual invitations, not private authenticated sessions.
+The four-character uppercase alphanumeric room code **is the host's Peer ID**. Code collisions retry up to eight times. A host accepts one guest with the matching protocol version (`neon-wing-city-v8`, incompatible with earlier builds) and rejects additional connections. Four characters are intended for casual invitations, not private authenticated sessions.
 
 `Simulation` owns movement limits, spawns, auto-fire, collision detection, damage, drops, upgrades, score and run completion. Guests send only normalized movement intent and their pause state. Input is validated for finite coordinates and normalized by the host; stale input expires after 300 ms. Guests never submit health changes, hits, or enemies. The guest predicts its own movement using the same pure movement function and replays recent input frames over incoming authoritative positions. Prediction is capped at 200 ms without snapshots; hull changes immediately correct it. The local pilot remains immediately predicted while the remote pilot uses a short authoritative interpolation buffer to absorb snapshot jitter. The host still owns all combat, collisions and health. There is no host migration. An interrupted transport can be rebuilt for the same original peer within a bounded recovery window; reloading a tab creates a new session and requires a new run.
 
@@ -207,7 +223,7 @@ The route now runs through original old-town, market, terrace, highline, canal a
 
 Scenic repairs one hull point after 14 damage-free seconds; Survival after 24. Brutal has no automatic repair. Neither repair revives a downed pilot.
 
-Both pilots must reload for protocol `neon-wing-city-v7`. Historical validation sections above refer to earlier versions; see the latest entry in `agents.md` for this update’s verification and limitations.
+Both pilots must reload for protocol `neon-wing-city-v8`. Historical validation sections above refer to earlier versions; see the latest entry in `agents.md` for this update’s verification and limitations.
 
 ### Dense city and endless solo — September 23, 2026
 
