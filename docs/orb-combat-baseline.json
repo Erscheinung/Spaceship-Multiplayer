@@ -1,0 +1,64 @@
+[
+  {
+    "config": {
+      "name": "desktop",
+      "width": 1440,
+      "height": 900,
+      "preset": "day"
+    },
+    "orbCount": 0,
+    "shotCount": 3,
+    "maxRocks": 0,
+    "maxBullets": 3,
+    "seenKinds": [
+      "crab"
+    ],
+    "captured": false,
+    "final": {
+      "time": 19.700000000000163,
+      "score": 250,
+      "over": false,
+      "median": 16.69999999999891,
+      "p95": 16.700000000000728,
+      "samples": 1122,
+      "textures": 23,
+      "geometries": 115
+    },
+    "layout": {
+      "overflow": false,
+      "overlap": false
+    },
+    "errors": []
+  },
+  {
+    "config": {
+      "name": "portrait",
+      "width": 393,
+      "height": 705,
+      "preset": "night"
+    },
+    "orbCount": 0,
+    "shotCount": 3,
+    "maxRocks": 0,
+    "maxBullets": 3,
+    "seenKinds": [
+      "crab"
+    ],
+    "captured": false,
+    "final": {
+      "time": 19.60000000000017,
+      "score": 250,
+      "over": false,
+      "median": 16.69999999999891,
+      "p95": 16.700000000000728,
+      "samples": 1116,
+      "textures": 21,
+      "geometries": 104
+    },
+    "layout": {
+      "overflow": false,
+      "overlap": false
+    },
+    "errors": []
+  }
+]

@@ -26,7 +26,7 @@ test('upgrades are picked up once, affect fire rate/spread and respect caps', ()
   sim.state.pickups = [{ id: 1, x: p.x, z: p.z, type: 'rate', life: 5 }, { id: 2, x: p.x, z: p.z, type: 'spread', life: 5 }];
   sim.tick(); assert.equal(p.rate, 8); assert.equal(p.spread, 2); assert.equal(sim.state.pickups.length, 0);
   sim.state.rocks.push({ id: 10, x: 0, z: -10, r: 1, hp: 100, speed: 0 });
-  sim.state.players[1].cooldown = 10; sim.tick(); assert.equal(sim.state.bullets.length, 5); assert.ok(p.cooldown < 0.15);
+  sim.state.players[1].cooldown = 10; p.cooldown = 0; sim.state.bullets = []; sim.tick(); assert.equal(sim.state.bullets.length, 5); assert.ok(p.cooldown < 0.15);
 });
 test('damage grants invulnerability, co-op ends when last pilot dies, final state is frozen', () => {
   const sim = new Simulation(); sim.state.players[1].hp = 0; sim.spawnClock = Infinity; const p = sim.state.players[0]; p.invulnerable = 0; p.hp = 2; p.cooldown = 10;
@@ -147,14 +147,16 @@ test('assisted fire rejects behind and off-cone rocks, including extreme elevati
     ['behind', { x: 0, y: 0, z: 20 }],
     ['lateral off-cone', { x: 22, y: 0, z: -20 }],
     ['vertical off-cone', { x: 0, y: 20, z: -20 }],
-    ['out of forward range', { x: 0, y: 0, z: -120 }]
+    ['out of forward range', { x: 10, y: 8, z: -120 }]
   ];
   for (const [label, offset] of cases) {
     const sim = new Simulation({ solo: true }); sim.spawnClock = Infinity;
     const p = sim.state.players[0]; p.x = 0; p.y = 0; p.z = 8; p.cooldown = 0;
     sim.state.rocks = [{ id: 1, x: p.x + offset.x, y: p.y + offset.y, z: p.z + offset.z, r: 1, hp: 2, speed: 0 }];
     sim.tick();
-    assert.equal(sim.state.bullets.length, 0, label);
+    assert.equal(sim.state.bullets.length, 1, label);
+    const shot = sim.state.bullets[0];
+    assert.equal(shot.vx,0,label);assert.equal(shot.vy,0,label);assert.ok(shot.vz<0,label);
   }
 });
 

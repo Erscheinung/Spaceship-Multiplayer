@@ -38,7 +38,7 @@ test('delivery mode is canonical while survival keeps the endless rock simulatio
   assert.equal(delivery.state.delivery.phase, 'intro');
   assert.equal(delivery.state.delivery.deadline, 90);
   for (let index = 0; index < 60; index++) delivery.tick();
-  assert.equal(delivery.state.rocks.length, 0);
+  assert.ok(delivery.state.rocks.length > 0, 'courier routes retain orb combat');
   const snapshot = delivery.snapshot();
   snapshot.delivery.recovered = 99;
   assert.equal(delivery.state.delivery.recovered, 0);
@@ -63,20 +63,26 @@ test('first moth tell and natural shot stay in a clear city lane instead of behi
 test('moths telegraph before vulnerability and a swept shot unfolds mail and bulb releases', () => {
   const delivery = createDeliveryState();
   const players = pilots();
-  let motion = advanceDelivery(delivery, { time: 8, dt: STEP, players, callbacks: callbacks() });
-  const moth = delivery.targets.find(target => target.kind === 'moth');
+  let bornAt = 8, motion, moth;
+  for (; bornAt < 40; bornAt += STEP) {
+    players.forEach(p=>{p.z=-25*bornAt});
+    motion = advanceDelivery(delivery,{time:bornAt,dt:STEP,players,callbacks:callbacks()});
+    moth=delivery.targets.find(target=>target.kind==='moth');
+    if(moth)break;
+  }
+  assert.ok(moth, 'a moth must find a clear approach');
   assert.equal(moth.stage, 'folded');
   assert.equal(moth.vulnerable, false);
   const early = sweepShot(moth);
-  hitDeliveryTargets(delivery, { bullets: [early.bullet], bulletStarts: early.starts, targetStarts: motion.targetStarts, time: 8, callbacks: callbacks() });
+  hitDeliveryTargets(delivery, { bullets: [early.bullet], bulletStarts: early.starts, targetStarts: motion.targetStarts, time: bornAt, callbacks: callbacks() });
   assert.equal(moth.completedAt, null);
   assert.equal(early.bullet.life, 1);
 
-  motion = advanceDelivery(delivery, { time: 9.5, dt: 1.5, players, callbacks: callbacks() });
+  motion = advanceDelivery(delivery, { time: bornAt+1.5, dt: 1.5, players, callbacks: callbacks() });
   assert.equal(moth.stage, 'exposed');
   assert.equal(deliveryAimTargets(delivery).length, 1);
   const shot = sweepShot(moth);
-  hitDeliveryTargets(delivery, { bullets: [shot.bullet], bulletStarts: shot.starts, targetStarts: motion.targetStarts, time: 9.5, callbacks: callbacks() });
+  hitDeliveryTargets(delivery, { bullets: [shot.bullet], bulletStarts: shot.starts, targetStarts: motion.targetStarts, time: bornAt+1.5, callbacks: callbacks() });
   assert.equal(shot.bullet.life, 0);
   assert.equal(moth.stage, 'released');
   assert.deepEqual(delivery.releases.map(release => release.kind).sort(), ['bulb', 'letter']);
@@ -121,12 +127,13 @@ test('clockwork crab exposes a socket, repairs after a swept hit, and never beco
   advanceDelivery(delivery, { time: 62.4, dt: .6, players, callbacks: callbacks() });
   assert.equal(crab.stage, 'repaired');
   assert.equal(delivery.repaired, 1);
-  assert.equal(delivery.releases.filter(release => release.sourceId === crab.id).length, 0);
+  assert.deepEqual(delivery.releases.filter(release => release.sourceId === crab.id).map(release=>release.kind), ['bulb']);
 });
 
 test('low flight safely bypasses crab auto-repair while a deliberate climb acquires its socket', () => {
   const sim = new Simulation({ solo: false, settings: { mode: 'delivery' } });
   const delivery = sim.state.delivery;
+  sim.spawnClock = Infinity; sim.state.players[1].active = false;
   const pilot = sim.state.players[0];
   delivery.milestones = { moths: [true, true, true], parcels: true, crab: true, destination: true };
   const crab = {
@@ -138,10 +145,12 @@ test('low flight safely bypasses crab auto-repair while a deliberate climb acqui
   delivery.targets = [crab];
   pilot.cooldown = 0;
   for (let index = 0; index < 20; index++) sim.tick();
-  assert.equal(sim.state.bullets.length, 0);
+  assert.ok(sim.state.bullets.length > 0);
+  assert.ok(sim.state.bullets.every(shot=>shot.vy === 0 && shot.vz < 0));
   assert.equal(delivery.repaired, 0);
   assert.equal(crab.stage, 'exposed');
 
+  sim.state.bullets = [];
   pilot.y = 8;
   pilot.vy = 0;
   pilot.cooldown = 0;
@@ -154,6 +163,7 @@ test('low flight safely bypasses crab auto-repair while a deliberate climb acqui
 
 test('assisted delivery fire remains forward-only and ignores vulnerable targets behind the hull', () => {
   const sim = new Simulation({ solo: false, settings: { mode: 'delivery' } });
+  sim.spawnClock = Infinity; sim.state.players[1].active = false;
   sim.state.time = 9.5;
   const delivery = sim.state.delivery;
   const p = sim.state.players[0];
@@ -166,7 +176,9 @@ test('assisted delivery fire remains forward-only and ignores vulnerable targets
   moth.routeDistance = sim.state.time * FLIGHT_SPEED - (p.z + 20);
   p.cooldown = 0;
   sim.tick();
-  assert.equal(sim.state.bullets.length, 0);
+  assert.ok(sim.state.bullets.length > 0);
+  assert.ok(sim.state.bullets.every(shot=>shot.vy === 0 && shot.vz < 0));
+  sim.state.bullets = [];
 
   moth.routeDistance = sim.state.time * FLIGHT_SPEED - (p.z - 30);
   moth.spawnedAt = sim.state.time - 2;

@@ -247,6 +247,9 @@ test('real delivery peers keep host mail canonical across pause, recovery and re
     // browser-level signal is exactly one fresh Engine.start on each pilot.
     await expect.poll(() => host.evaluate(() => window.__deliveryStartCount), { timeout: 10000 }).toBe(starts[0] + 1);
     await expect.poll(() => guest.evaluate(() => window.__deliveryStartCount), { timeout: 10000 }).toBe(starts[1] + 1);
+    // Engine.start clears guest state until the first snapshot of the new run.
+    await expect.poll(async () => Boolean((await readDigest(host))?.mail)).toBe(true);
+    await expect.poll(async () => Boolean((await readDigest(guest))?.mail)).toBe(true);
     const [replayedHost, replayedGuest] = await Promise.all([readDigest(host), readDigest(guest)]);
     for (const replayed of [replayedHost, replayedGuest]) {
       expect(replayed.mail.recovered).toBe(0);

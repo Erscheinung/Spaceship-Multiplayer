@@ -1,4 +1,4 @@
-import { cityObstacles, FLIGHT_SPEED, hitsBuilding } from './course.js';
+import { cityObstacles, FLIGHT_SPEED, hitsBuilding, worldPosition, courseFrame } from './course.js';
 
 export const DELIVERY_DEADLINE = 90;
 const TARGET_LINGER = 0.7;
@@ -37,6 +37,7 @@ function routePosition(routeDistance, time) {
 }
 
 export function deliverySightlineClear(start, end, obstacles, padding = .45) {
+  if (![start.x, start.y ?? 0, start.z, end.x, end.y ?? 0, end.z, padding].every(Number.isFinite)) return false;
   const length = Math.hypot(end.x - start.x, (end.y ?? 0) - (start.y ?? 0), end.z - start.z);
   const steps = Math.max(1, Math.ceil(length));
   for (let index = 1; index <= steps; index++) {
@@ -51,24 +52,86 @@ export function deliverySightlineClear(start, end, obstacles, padding = .45) {
   return true;
 }
 
+// Check the rendered, banked route too: a target around a bend must not
+// acquire the weapon merely because its route-space z is in front.
+export function forwardSightlineClear(start, end, obstacles, time, padding = .45) {
+  const a = worldPosition(start.x, start.y ?? 0, start.z, time);
+  const b = worldPosition(end.x, end.y ?? 0, end.z, time);
+  const frame = courseFrame(time * FLIGHT_SPEED - start.z);
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+  if ((dx * frame.forward.x + dy * frame.forward.y + dz * frame.forward.z) / Math.max(.001, Math.hypot(dx, dy, dz)) < Math.cos(Math.PI / 5)) return false;
+  if (!deliverySightlineClear(start, end, obstacles, padding)) return false;
+  // Slab intersection of the actual world-space sight ray and each banked
+  // obstacle box; no per-frame mesh raycasts or allocations of Three objects.
+  for (const obstacle of obstacles) {
+    const f = courseFrame(time * FLIGHT_SPEED - obstacle.z);
+    const low = obstacle.kind === 'gate' ? obstacle.y - obstacle.height / 2 : -4;
+    const high = obstacle.kind === 'gate' ? obstacle.y + obstacle.height / 2 : obstacle.height - 4;
+    const center = worldPosition(obstacle.x, (low + high) / 2, obstacle.z, time);
+    let near = 0, far = 1;
+    for (const [axis, extent] of [[f.right, obstacle.width / 2], [f.up, (high - low) / 2], [f.forward, obstacle.depth / 2]]) {
+      const origin = (a.x - center.x) * axis.x + (a.y - center.y) * axis.y + (a.z - center.z) * axis.z;
+      const delta = dx * axis.x + dy * axis.y + dz * axis.z;
+      const radius = extent + padding;
+      if (Math.abs(delta) < 1e-8) { if (Math.abs(origin) > radius) { far = -1; break; } }
+      else {
+        const t1 = (-radius - origin) / delta, t2 = (radius - origin) / delta;
+        near = Math.max(near, Math.min(t1, t2)); far = Math.min(far, Math.max(t1, t2));
+      }
+      if (near > far) break;
+    }
+    if (near <= far) return false;
+  }
+  return true;
+}
+
 // Encounter routes are chosen against the same deterministic collision kit
 // used by host and guest. Testing the whole approach ray (plus the target's
 // small authored sway) prevents a readable silhouette from being staged
 // behind a poster tower even when its final point itself is in open space.
-function clearEncounterAnchor(pilot, time, approach, preferredX, preferredY, { sway = 0, depth = 0 } = {}) {
+export function clearEncounterAnchor(pilot, time, approach, preferredX, preferredY, { sway = 0, verticalSway = 0, depth = 0, padding = 1, warning = 0 } = {}) {
   const obstacles = cityObstacles(time, [pilot]);
   const xChoices = [...new Set([clamp(preferredX, -10.5, 10.5), clamp(pilot.x, -10.5, 10.5), -10.5, -7, -3.5, 0, 3.5, 7, 10.5])]
     .sort((a, b) => Math.abs(a - preferredX) - Math.abs(b - preferredX));
   const yChoices = [...new Set([clamp(preferredY, 2, 24), clamp((pilot.y ?? 0) + 4, 2, 24), 4, 8, 12, 18, 24])]
     .sort((a, b) => Math.abs(a - preferredY) - Math.abs(b - preferredY));
-  for (const distance of [approach + 30, approach + 15, approach, approach - 15]) {
+  // Forecast the short unsteered approach, not just the spawn frame. The
+  // route's outward drift can otherwise put a tower across the tell a few
+  // frames later. Intentional steering remains the pilot's responsibility.
+  const forecasts = [{ pilot: { ...pilot }, time, obstacles }];
+  if (warning > 0) {
+    const predicted = { ...pilot, vx: pilot.vx ?? 0, boost: pilot.boost ?? 0 };
+    const step = 1 / 30;
+    for (let elapsed = step; elapsed <= warning + step / 2; elapsed += step) {
+      const futureTime = time + elapsed;
+      const curve = courseFrame(futureTime * FLIGHT_SPEED - predicted.z).curvature;
+      const drift = -curve * (FLIGHT_SPEED + predicted.boost) ** 2 * .16;
+      predicted.vx += (drift - predicted.vx) * (1 - Math.exp(-step * 10));
+      predicted.x = clamp(predicted.x + predicted.vx * step, -12.85, 12.85);
+      predicted.z -= predicted.boost * step;
+      // Cover descent during a tell; an already-climbing pilot can still
+      // choose the high lane, but is never required to keep climbing.
+      predicted.y = Math.max(0, (pilot.y ?? 0) - Math.max(0, -(pilot.vy ?? 0)) * elapsed);
+      if (Math.round(elapsed / step) % 6 === 0 || elapsed + step > warning) {
+        forecasts.push({ pilot: { ...predicted }, time: futureTime, obstacles: cityObstacles(futureTime, [predicted]) });
+      }
+    }
+  }
+  for (const distance of [...new Set([approach, approach - 15, approach - 30, 55, 40])]) {
+    if (warning && distance < (FLIGHT_SPEED + (pilot.boost ?? 0)) * warning + 12) continue;
     for (const y of yChoices) {
       for (const x of xChoices) {
         let clear = true;
-        for (const xOffset of [-sway, 0, sway]) {
-          for (const zOffset of [0, depth]) {
-            const end = { x: clamp(x + xOffset, -11, 11), y, z: pilot.z - distance - zOffset };
-            if (!deliverySightlineClear(pilot, end, obstacles)) { clear = false; break; }
+        for (const forecast of forecasts) {
+          for (const xOffset of new Set([-sway, 0, sway])) {
+            for (const yOffset of new Set([-verticalSway, verticalSway])) {
+              for (const zOffset of new Set([0, depth])) {
+                const end = { x: clamp(x + xOffset, -11, 11), y: clamp(y + yOffset, 1.5, 24), z: pilot.z - distance - zOffset + (forecast.time - time) * FLIGHT_SPEED };
+                if (!forwardSightlineClear(forecast.pilot, end, forecast.obstacles, forecast.time, padding)) { clear = false; break; }
+              }
+              if (!clear) break;
+            }
+            if (!clear) break;
           }
           if (!clear) break;
         }
@@ -76,15 +139,14 @@ function clearEncounterAnchor(pilot, time, approach, preferredX, preferredY, { s
       }
     }
   }
-  // A high fallback remains physically flyable and visible above the sparse
-  // tower kit. It is used only if no low authored lane passes the full check.
-  return { approach, x: clamp(preferredX, -10.5, 10.5), y: 24 };
+  // Keep the city intact; defer an encounter if this bend has no clear lane.
+  return null;
 }
 
 export function createDeliveryState(endless = false) {
   return {
     phase: 'intro',
-    endless, clearings: [], nextEncounter: 5, encounterSerial: 0, bag: [], event: 'Cruise the city · encounters ahead', district: 0, postcards: [], deliveries: 0,
+    endless, nextEncounter: 5, encounterSerial: 0, bag: [], event: 'LASERS AUTO-FIRE · break amber orbs · collect diamond upgrades', district: 0, postcards: [], deliveries: 0,
     elapsed: 0,
     deadline: DELIVERY_DEADLINE,
     recovered: 0,
@@ -139,7 +201,8 @@ function spawnMoth(delivery, players, time, index) {
   // clear block gap so the first moth appears before, rather than behind, the
   // market poster tower that previously swallowed its entire tell.
   const approach = pilot.boost > 40 ? 105 : 90;
-  const anchor = clearEncounterAnchor(pilot, time, approach, pilot.x + offsets[index], (pilot.y ?? 0) + heights[index], { sway: .7 });
+  const anchor = clearEncounterAnchor(pilot, time, approach, pilot.x + offsets[index], (pilot.y ?? 0) + heights[index], { sway: .7, verticalSway: .75, warning: pilot.boost > 40 ? 1.1 : 1.8 });
+  if (!anchor) return;
   const target = targetBase(`mail-moth-${index + 1}`, 'moth', `moth-${index + 1}`, pilot, time, anchor.approach, anchor.x - pilot.x, anchor.y - (pilot.y ?? 0), 2.45);
   target.swoop = index % 2 ? -1 : 1;
   target.tellRate = pilot.boost > 40 ? 1.9 : 1;
@@ -151,7 +214,8 @@ function spawnParcels(delivery, players, time) {
   const pilot = leadPilot(players);
   const chainLength = 4;
   const preferredX = pilot.x * .65;
-  const anchor = clearEncounterAnchor(pilot, time, 165, preferredX, (pilot.y ?? 0) + 1, { sway: 3.5, depth: (chainLength - 1) * 7 });
+  const anchor = clearEncounterAnchor(pilot, time, 100, preferredX, (pilot.y ?? 0) + 1, { sway: 3.5, verticalSway: 1.55, depth: (chainLength - 1) * 7, warning: 1.3 });
+  if (!anchor) return;
   const base = targetBase('mail-parcel-1', 'parcel', 'parcel-train', pilot, time, anchor.approach, anchor.x - pilot.x, anchor.y - (pilot.y ?? 0), 1.5);
   for (let index = 0; index < chainLength; index++) {
     const target = {
@@ -175,7 +239,8 @@ function spawnParcels(delivery, players, time) {
 function spawnCrab(delivery, players, time) {
   const pilot = leadPilot(players);
   const preferredX = pilot.x + (pilot.x > 0 ? -5 : 5);
-  const anchor = clearEncounterAnchor(pilot, time, 175, preferredX, (pilot.y ?? 0) + 2);
+  const anchor = clearEncounterAnchor(pilot, time, pilot.boost > 40 ? 165 : 110, preferredX, (pilot.y ?? 0) + 2, { warning: 2 });
+  if (!anchor) return;
   const target = targetBase('mail-crab-1', 'crab', 'sign-crab', pilot, time, anchor.approach, anchor.x - pilot.x, anchor.y - (pilot.y ?? 0), 2.1);
   target.repairAt = null;
   delivery.targets.push(target);
@@ -188,7 +253,6 @@ function spawnDestination(delivery, players, time) {
   // this places the shop about twelve seconds away while still letting boost
   // produce an earlier, earned arrival.
   const routeDistance = courseProgress(pilot, time) + (FLIGHT_SPEED + 25) * 12;
-  if (delivery.endless) delivery.clearings.push({ start: routeDistance - 170, end: routeDistance + 50 });
   delivery.destination = {
     id: 'mail-destination',
     shop: 'nightjar-radio',
@@ -287,6 +351,8 @@ function updateCrab(target, time, callbacks, delivery) {
       target.completedAt = time;
       target.stage = 'repaired';
       delivery.repaired++;
+      if (delivery.endless) delivery.event = 'SIGN REPAIRED · +250 · collect the released bulb';
+      addRelease(delivery, target, 'bulb', 'repair-bulb', time, 0, -.5);
       callbacks.score?.(250);
       callbacks.effect?.(target.x, target.z, 'cyan', target.y);
     }
@@ -329,6 +395,8 @@ export function advanceDelivery(delivery, { time, dt, players, callbacks = {} })
       delivery.destination = null; delivery.restored = false;
     }
   } else {
+  if (time >= (delivery.nextPlacement ?? 0)) {
+  delivery.nextPlacement = time + .25;
   const mothTimes = [8, 15, 22];
   for (let index = 0; index < mothTimes.length; index++) {
     if (!delivery.milestones.moths[index] && time >= mothTimes[index]) spawnMoth(delivery, players, time, index);
@@ -336,6 +404,7 @@ export function advanceDelivery(delivery, { time, dt, players, callbacks = {} })
   if (!delivery.milestones.parcels && time >= 34) spawnParcels(delivery, players, time);
   if (!delivery.milestones.crab && time >= 60) spawnCrab(delivery, players, time);
   if (!delivery.milestones.destination && time >= 75) spawnDestination(delivery, players, time);
+  }
 
   }
 
@@ -376,8 +445,9 @@ function releaseMoth(delivery, target, time, callbacks) {
   callbacks.effect?.(target.x, target.z, 'gold', target.y);
 }
 
-function triggerParcelTrain(delivery, time, callbacks) {
-  for (const parcel of delivery.targets.filter(target => target.kind === 'parcel' && target.completedAt === null)) {
+function triggerParcelTrain(delivery, target, time, callbacks) {
+  const encounter = target.encounter;
+  for (const parcel of delivery.targets.filter(target => target.kind === 'parcel' && target.encounter === encounter && target.completedAt === null)) {
     parcel.triggerAt = time + parcel.chainIndex * .18;
     parcel.stage = 'opening';
     parcel.open = true;
@@ -402,7 +472,7 @@ export function hitDeliveryTargets(delivery, { bullets, bulletStarts, targetStar
       if (!relativeSweep(bulletStart, bullet, targetStart, target, { x: radius, y: radius, z: radius })) continue;
       bullet.life = 0;
       if (target.kind === 'moth') releaseMoth(delivery, target, time, callbacks);
-      else if (target.kind === 'parcel') triggerParcelTrain(delivery, time, callbacks);
+      else if (target.kind === 'parcel') triggerParcelTrain(delivery, target, time, callbacks);
       else if (target.kind === 'sorter') {
         target.drawers++;
         target.vulnerable = false; target.nextDrawer = time + .4;
@@ -554,25 +624,23 @@ function spawnRoamingEncounter(delivery, players, time, random) {
   }
   const kind = delivery.bag.pop();
   const before = delivery.targets.length;
-  const progress = courseProgress(leadPilot(players), time);
-  delivery.clearings = delivery.clearings.filter(zone => zone.end > progress - 80);
-  delivery.clearings.push({ start: progress - 25, end: progress + 330 });
   if (kind === 'moth') spawnMoth(delivery, players, time, delivery.encounterSerial % 3);
   if (kind === 'parcel') spawnParcels(delivery, players, time);
   if (kind === 'crab') spawnCrab(delivery, players, time);
   if (kind === 'sorter') {
     const pilot = leadPilot(players);
-    const anchor = clearEncounterAnchor(pilot, time, 150, pilot.x, (pilot.y ?? 0) + 1);
+    const anchor = clearEncounterAnchor(pilot, time, pilot.boost > 40 ? 165 : 110, pilot.x, (pilot.y ?? 0) + 1, { sway: .8, warning: 2 });
+    if (!anchor) { delivery.bag.push(kind); delivery.nextEncounter = time + 2; return; }
     const target = targetBase('sorter', 'sorter', 'night-sorter', pilot, time, anchor.approach, anchor.x - pilot.x, anchor.y - (pilot.y ?? 0), 3.4);
     target.drawers = 0; target.nextDrawer = time + 1; delivery.targets.push(target);
   }
+  if (delivery.targets.length === before) { delivery.bag.push(kind); delivery.nextEncounter = time + 2; return; }
   delivery.encounterSerial++;
   for (const target of delivery.targets.slice(before)) {
     target.id += `-event-${delivery.encounterSerial}`;
-    target.baseY = clamp((leadPilot(players).y ?? 0) + (kind === 'crab' ? 2 : 1), 2, 23);
-    target.y = target.baseY;
+    target.encounter += `-event-${delivery.encounterSerial}`;
   }
-  delivery.event = { moth: 'STATIC MOTH · align with the glowing chest', parcel: 'PARCEL TRAIN · aim at the first seal', crab: 'SIGN CRAB · align to repair its open socket', sorter: 'NIGHT SORTER · open three glowing drawers' }[kind];
+  delivery.event = { moth: 'STATIC MOTH · align with the glowing chest', parcel: 'PARCEL TRAIN · aim at the first seal', crab: 'SIGN CRAB · climb to its cyan socket · laser repairs the sign', sorter: 'NIGHT SORTER · open three glowing drawers' }[kind];
   delivery.nextEncounter = time + 15 + random() * 5;
   if (delivery.encounterSerial % 4 === 0 && !delivery.destination) {
     delivery.district = Math.floor(delivery.encounterSerial / 4 - 1) % 3;

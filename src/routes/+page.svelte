@@ -248,7 +248,7 @@
           <div class="flight-setup">
             <label for="route-mode">YOUR ROUTE {screen === 'join' ? '— HOST DECIDES' : ''}</label>
             <select id="route-mode" bind:value={routeMode} disabled={busy || screen === 'join'}><option value="delivery">City encounters · Courier</option><option value="survival">Endless skyway · Survival</option></select>
-            <p class="setup-note">{routeMode === 'delivery' ? 'Solo: endless encounters and neighborhood deliveries. Together: a shared 90-second route.' : 'The original endless flight. Dodge rocks and collect upgrades.'}</p>
+            <p class="setup-note">{routeMode === 'delivery' ? 'Auto-fire lasers break amber orbs; collect diamond upgrades and recover mail. Solo runs endlessly; together, fly a 90-second route.' : 'The original endless flight. Dodge rocks and collect upgrades.'}</p>
             <label for="difficulty">FLIGHT DIFFICULTY {screen === 'join' ? '— HOST DECIDES' : ''}</label>
             <select id="difficulty" bind:value={difficulty} disabled={busy || screen === 'join'}>{#each Object.entries(DIFFICULTIES) as [key,value]}<option value={key}>{value.label}</option>{/each}</select>
             <p class="setup-note">{difficulty==='brutal' ? 'No aim assist. Line up in height and direction. Double damage.' : difficulty==='easy' ? 'A gentler flight with assisted aim.' : 'Faster threats, assisted aim. Stay on the move.'}</p>

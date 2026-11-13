@@ -394,6 +394,8 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
       object.userData.tools.forEach((tool, index) => { tool.visible = open > .72; tool.rotation.z += reduceMotion ? 0 : Math.sin(time * 5 + index) * dt * .08; });
       object.userData.antennae.forEach((antenna, index) => { antenna.rotation.z = reduceMotion ? 0 : Math.sin(time * 3.2 + index * 2) * .08; });
       const repaired = target.stage === 'repaired'; object.userData.socket.material = repaired ? warmMaterial : tealMaterial;
+      object.userData.socket.scale.setScalar(target.stage === 'repairing' ? 1 + target.tell * .35 : repaired ? 1.35 : 1);
+      object.userData.antennae.forEach((antenna, index) => { if (repaired) antenna.rotation.z = (index ? -1 : 1) * .45; });
       const release = repaired && Number.isFinite(target.completedAt) ? clamp01((time - target.completedAt - 1.8) / .7) : 0;
       object.scale.setScalar(Math.max(.04, mix(Math.max(.8, Math.min(1.2, (target.r ?? 2.5) / 2.5)), .04, release)));
     });

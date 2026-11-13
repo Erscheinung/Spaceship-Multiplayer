@@ -1,5 +1,7 @@
 # Recurring city encounters — November 13, 2026
 
+Historical validation for `1ecc4a6`. Combat and obstacle-clearing behavior are superseded by [the orb combat repair](orb-combat-validation.md).
+
 Solo City encounters replaces the fixed ending with shuffled four-encounter bags and 15–20 second spacing. Static Moths unfold, Parcel Trains release a four-seal domino, Sign Crabs accept a socket repair, and the moving Night Sorter opens three drawers. Each has a distinct silhouette and release animation. The old ship-following cargo rack is removed. Normal assisted fire remains forward-only; Brutal still requires alignment.
 
 Every fourth event introduces a neighborhood delivery. Nightjar Radio, Comet Coffee and Moss & Moon have named fascias and aerial/cup/flower roof emblems, warm restored windows, and individual locally stored postcards. Solo delivery begins during the approach so the sign changes before the ship passes. Shops remain at their route location instead of following the camera. These are three delivery landmark identities within the existing architecture kit; full new district street kits and simultaneous two-socket co-op puzzles remain future expansion work. Co-op retains its existing finite shared route.

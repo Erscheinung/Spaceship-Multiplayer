@@ -165,9 +165,15 @@ export function makeImpactBurst(color) {
 }
 
 export function makeRock(seed) {
-  const group = outlined(new THREE.IcosahedronGeometry(1, 0), 0xcb7459);
-  const band = outlined(new THREE.TorusGeometry(.77, .09, 4, 12), 0xffd476);
-  band.rotation.x = Math.PI / 2; group.add(band); return group;
+  // Amber spherical targets read differently from the cyan/coral diamond
+  // upgrades. A solid luminous core and dark latitude cage retain a clear
+  // silhouette without transparent shells, pulses or extra lights.
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(new THREE.IcosahedronGeometry(.9, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffa342).multiplyScalar(1.65) })));
+  const cage = new THREE.Mesh(new THREE.TorusGeometry(.94, .065, 4, 16), new THREE.MeshBasicMaterial({ color: INK }));
+  cage.rotation.x = Math.PI / 2; group.add(cage);
+  const meridian = new THREE.Mesh(cage.geometry, cage.material); meridian.rotation.y = (seed % 7) * .3; group.add(meridian);
+  return group;
 }
 
 export function makePickup(type) {

@@ -1,6 +1,6 @@
 import { DIFFICULTIES, flightSettings } from './settings.js';
 import { cityObstacles, hitsBuilding, courseFrame, FLIGHT_SPEED } from './course.js';
-import { advanceDelivery, collectDelivery, createDeliveryState, deliveryAimTargets, finishDelivery, hitDeliveryTargets } from './delivery.js';
+import { advanceDelivery, clearEncounterAnchor, forwardSightlineClear, deliverySightlineClear, collectDelivery, createDeliveryState, deliveryAimTargets, finishDelivery, hitDeliveryTargets } from './delivery.js';
 export const BOUNDS = { x: 13, zMin: -12, zMax: 13 };
 export const STEP = 1 / 60;
 // The former boost pace is now the everyday cruise pace. `boost` remains a
@@ -15,7 +15,7 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z, (a.y ?? 0) - (b.y ??
 // or beside the ship from producing visibly implausible aim corrections.
 const assistedAimRange = 110;
 const assistedAimCos = Math.cos(Math.PI / 6); // 30 degree half-angle.
-const assistedTarget = (pilot, rocks) => rocks.reduce((best, rock) => {
+const assistedTarget = (pilot, rocks, obstacles, time) => rocks.reduce((best, rock) => {
   if (rock.hp <= 0) return best;
   const dx = rock.x - pilot.x;
   const dy = (rock.y ?? 0) - (pilot.y ?? 0);
@@ -26,7 +26,8 @@ const assistedTarget = (pilot, rocks) => rocks.reduce((best, rock) => {
   // outside the 3D cone.  A center-point test keeps target selection stable
   // and leaves the projectile collision radius to handle visible overlap.
   if (forward <= 0 || forward > assistedAimRange || forward / Math.max(length, 1e-8) < assistedAimCos) return best;
-  return !best || length < distance(pilot, best) ? rock : best;
+  if (best && length >= distance(pilot, best)) return best;
+  return forwardSightlineClear(pilot, rock, obstacles, time) ? rock : best;
 }, null);
 // Include the ship's travel between steps so a fast pass cannot skip an orb.
 const pickupRadius = 2.4; // Ship hull plus the visible pickup ring.
@@ -34,6 +35,12 @@ const pickupRadius = 2.4; // Ship hull plus the visible pickup ring.
 // flames. `y` and `z` offsets put the envelope around the canopy and fuselage.
 const shipHull = { x: 1.75, y: 0.45, z: 1.6, offsetY: 0.25, offsetZ: -0.4 };
 function sweptDistance(start, end, point) {
+  // Missing altitude means ground level throughout the snapshot protocol.
+  // Reject malformed coordinates rather than letting NaN turn a comparison
+  // into a spurious hit on every projectile in the frame.
+  start = { x: start.x, y: start.y ?? 0, z: start.z };
+  end = { x: end.x, y: end.y ?? 0, z: end.z };
+  if (![start.x, start.y, start.z, end.x, end.y, end.z, point.x, point.y ?? 0, point.z].every(Number.isFinite)) return Infinity;
   const dx = end.x - start.x, dy = end.y - start.y, dz = end.z - start.z;
   const t = clamp(((point.x - start.x) * dx + ((point.y ?? 0) - start.y) * dy + (point.z - start.z) * dz) / Math.max(1e-8, dx * dx + dy * dy + dz * dz), 0, 1);
   return Math.hypot(point.x - start.x - dx * t, (point.y ?? 0) - start.y - dy * t, point.z - start.z - dz * t);
@@ -98,7 +105,11 @@ export class Simulation {
     const pilots = this.state.players.filter(p => p.active && p.hp > 0);
     const pilot = pilots[Math.floor(this.random() * pilots.length)] ?? this.state.players[0];
     const r = 0.65 + this.random() * 0.85;
-    this.state.rocks.push({ id: this.nextId++, x: (this.random() * 2 - 1) * 13, z: pilot.z - 65, y: Math.max(0, Math.min(28, pilot.y + (this.random() - .5) * 10)), r, hp: Math.ceil(r * 2), speed: (5 + this.state.wave * .75 + this.random() * 2) * this.difficulty.speed, seed: Math.floor(this.random() * 100000), spin: this.random() * 2 - 1 });
+    const anchor = clearEncounterAnchor(pilot, this.state.time, 65, clamp(pilot.x + (this.random() - .5) * 12, -11, 11), clamp(pilot.y + (this.random() - .5) * 5, 0, 26), { padding: r });
+    if (!anchor) return;
+    this.state.rocks.push({ id: this.nextId++, x: anchor.x, z: pilot.z - anchor.approach, y: anchor.y, r,
+      hp: Math.ceil(r * 2), speed: (5 + Math.min(this.state.wave, 12) * .75 + this.random() * 2) * this.difficulty.speed,
+      seed: Math.floor(this.random() * 100000), spin: this.random() * 2 - 1 });
   }
   burst(x, z, color, y = 0) { this.state.effects.push({ id: this.nextId++, x, z, y, color, life: 0.45 }); }
   tick(dt = STEP) {
@@ -110,15 +121,10 @@ export class Simulation {
     let deliveryMotion = null;
     const deliveryCallbacks = { random: this.random, score: points => { s.score += points; }, effect: (x, z, color, y) => this.burst(x, z, color, y) };
     if (s.delivery) deliveryMotion = advanceDelivery(s.delivery, { time: s.time, dt, players: s.players, callbacks: deliveryCallbacks });
-    else {
-      this.spawnClock -= dt;
-      if (this.spawnClock <= 0) { this.spawnRock(); this.spawnClock = Math.max(0.12, this.difficulty.spawn - s.time * 0.004); }
-    }
-    if (s.delivery?.endless) {
-      s.obstacles = s.obstacles.filter(obstacle => {
-        const distance = s.time * FLIGHT_SPEED - obstacle.z;
-        return !s.delivery.clearings.some(zone => distance >= zone.start && distance <= zone.end);
-      });
+    this.spawnClock -= dt;
+    if (this.spawnClock <= 0) {
+      this.spawnRock();
+      this.spawnClock = s.delivery ? Math.max(.5, this.difficulty.spawn * .65) : Math.max(.12, this.difficulty.spawn - s.time * .004);
     }
     for (const p of s.players) {
       if (!p.active || p.hp <= 0) continue;
@@ -129,9 +135,11 @@ export class Simulation {
         this.burst(p.x, p.z, p.id ? 'magenta' : 'cyan', p.y);
       }
       p.invulnerable = Math.max(0, p.invulnerable - dt); p.cooldown -= dt;
-      const target = this.difficulty.aim ? assistedTarget(p, s.delivery ? deliveryAimTargets(s.delivery, p) : s.rocks) : null;
-      if ((target || !this.difficulty.aim) && p.cooldown <= 0) {
-        p.cooldown = Math.max(0.11, 0.48 * Math.pow(0.83, p.rate));
+      // Encounter work gets first refusal; everyday orbs fill the space
+      // between tells. Both candidates obey forward and city visibility.
+      const target = p.cooldown <= 0 && this.difficulty.aim ? (s.delivery && assistedTarget(p, deliveryAimTargets(s.delivery, p), s.obstacles, s.time)) || assistedTarget(p, s.rocks, s.obstacles, s.time) : null;
+      if (p.cooldown <= 0) {
+        p.cooldown = Math.max(0.11, 0.3 * Math.pow(0.83, p.rate));
         const direction = this.difficulty.aim && target ? { x: target.x-p.x, y: (target.y ?? 0)-p.y, z: target.z-p.z } : { x:0, y:0, z:-1 };
         const length = Math.max(.001, Math.hypot(direction.x,direction.y,direction.z));
         const nx = direction.x / length, ny = direction.y / length, nz = direction.z / length;
@@ -152,10 +160,15 @@ export class Simulation {
     for (const r of s.rocks) r.z += r.speed * dt;
     for (const b of s.bullets) {
       b.y = (b.y ?? 0) + (b.vy ?? 0) * dt; b.x += b.vx * dt; b.z += b.vz * dt; b.life -= dt;
-      if (s.obstacles.some(building => hitsBuilding(b, building, .17))) { b.life = 0; continue; }
-      for (const r of s.rocks) {
-        if (r.hp <= 0 || distance(b, r) > r.r + 0.25) continue;
+      if (!deliverySightlineClear(bulletsBefore.get(b.id) ?? b, b, s.obstacles, .17)) { b.life = 0; continue; }
+      for (let index = 0; index < s.rocks.length; index++) {
+        const r = s.rocks[index];
+        const start = bulletsBefore.get(b.id) ?? b;
+        const relativeStart = { x: start.x - rocksBefore[index].x, y: start.y - rocksBefore[index].y, z: start.z - rocksBefore[index].z };
+        const relativeEnd = { x: b.x - r.x, y: (b.y ?? 0) - (r.y ?? 0), z: b.z - r.z };
+        if (r.hp <= 0 || sweptDistance(relativeStart, relativeEnd, { x: 0, y: 0, z: 0 }) > r.r + .25) continue;
         r.hp--; b.life = 0;
+        if (r.hp > 0) this.burst(r.x, r.z, 'orange', r.y);
         if (r.hp <= 0) {
           s.score += 100; this.burst(r.x, r.z, 'orange', r.y);
           if (this.random() < 0.42) s.pickups.push({ id: this.nextId++, x: r.x, y: r.y ?? 0, z: r.z, type: this.random() < 0.5 ? 'rate' : 'spread', life: 16 });
