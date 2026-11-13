@@ -1,0 +1,215 @@
+[
+  {
+    "width": 320,
+    "height": 568,
+    "boxes": [
+      {
+        "selector": ".brand",
+        "x": 14,
+        "y": 7.5,
+        "right": 149.859375,
+        "bottom": 47.5
+      },
+      {
+        "selector": ".header-right",
+        "x": 162.375,
+        "y": 8.5,
+        "right": 306,
+        "bottom": 46.5
+      },
+      {
+        "selector": ".pilot-card",
+        "x": 14,
+        "y": 57,
+        "right": 111.390625,
+        "bottom": 147
+      },
+      {
+        "selector": ".run-stats",
+        "x": 158,
+        "y": 57,
+        "right": 254,
+        "bottom": 141.796875
+      },
+      {
+        "selector": ".pause-button",
+        "x": 262,
+        "y": 57,
+        "right": 306,
+        "bottom": 101
+      },
+      {
+        "selector": ".flight-instruments",
+        "x": 14,
+        "y": 166,
+        "right": 170.5,
+        "bottom": 194
+      },
+      {
+        "selector": ".delivery-status",
+        "x": 14,
+        "y": 202,
+        "right": 306,
+        "bottom": 242
+      },
+      {
+        "selector": ".touch-pad",
+        "x": 64,
+        "y": 412.21875,
+        "right": 168,
+        "bottom": 516.21875
+      },
+      {
+        "selector": ".flight-actions",
+        "x": 242,
+        "y": 431,
+        "right": 308,
+        "bottom": 505
+      }
+    ],
+    "overlaps": [],
+    "overflow": false
+  },
+  {
+    "width": 667,
+    "height": 375,
+    "boxes": [
+      {
+        "selector": ".brand",
+        "x": 14,
+        "y": 0,
+        "right": 149.859375,
+        "bottom": 40
+      },
+      {
+        "selector": ".header-right",
+        "x": 509.375,
+        "y": 1,
+        "right": 653,
+        "bottom": 39
+      },
+      {
+        "selector": ".pilot-card",
+        "x": 14,
+        "y": 40,
+        "right": 111.390625,
+        "bottom": 130
+      },
+      {
+        "selector": ".run-stats",
+        "x": 505,
+        "y": 40,
+        "right": 601,
+        "bottom": 120.796875
+      },
+      {
+        "selector": ".pause-button",
+        "x": 609,
+        "y": 40,
+        "right": 653,
+        "bottom": 84
+      },
+      {
+        "selector": ".flight-instruments",
+        "x": 14,
+        "y": 143,
+        "right": 170.5,
+        "bottom": 171
+      },
+      {
+        "selector": ".delivery-status",
+        "x": 210,
+        "y": 338.40625,
+        "right": 560.28125,
+        "bottom": 363
+      },
+      {
+        "selector": ".touch-pad",
+        "x": 109.5,
+        "y": 251.21875,
+        "right": 194.5,
+        "bottom": 336.21875
+      },
+      {
+        "selector": ".flight-actions",
+        "x": 595,
+        "y": 266,
+        "right": 655,
+        "bottom": 331
+      }
+    ],
+    "overlaps": [],
+    "overflow": false
+  },
+  {
+    "width": 320,
+    "height": 480,
+    "boxes": [
+      {
+        "selector": ".brand",
+        "x": 14,
+        "y": 0,
+        "right": 149.859375,
+        "bottom": 40
+      },
+      {
+        "selector": ".header-right",
+        "x": 162.375,
+        "y": 1,
+        "right": 306,
+        "bottom": 39
+      },
+      {
+        "selector": ".pilot-card",
+        "x": 14,
+        "y": 40,
+        "right": 111.390625,
+        "bottom": 130
+      },
+      {
+        "selector": ".run-stats",
+        "x": 158,
+        "y": 40,
+        "right": 254,
+        "bottom": 120.796875
+      },
+      {
+        "selector": ".pause-button",
+        "x": 262,
+        "y": 40,
+        "right": 306,
+        "bottom": 84
+      },
+      {
+        "selector": ".flight-instruments",
+        "x": 14,
+        "y": 143,
+        "right": 170.5,
+        "bottom": 171
+      },
+      {
+        "selector": ".delivery-status",
+        "x": 14,
+        "y": 202,
+        "right": 306,
+        "bottom": 226.59375
+      },
+      {
+        "selector": ".touch-pad",
+        "x": 73.5,
+        "y": 356.21875,
+        "right": 158.5,
+        "bottom": 441.21875
+      },
+      {
+        "selector": ".flight-actions",
+        "x": 248,
+        "y": 371,
+        "right": 308,
+        "bottom": 436
+      }
+    ],
+    "overlaps": [],
+    "overflow": false
+  }
+]

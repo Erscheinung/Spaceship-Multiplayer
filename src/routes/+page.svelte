@@ -13,6 +13,8 @@
   let damageNotice = '', damageFlash = false, damageNoticeTimer;
   let steeringBoost = false, steeringPointer = null;
   let deliveryAudio, lastDelivery = null;
+  let postcardBook = [];
+  try { if (typeof window !== 'undefined') postcardBook = JSON.parse(localStorage.getItem('afterlight-postcards') || '[]'); if (!Array.isArray(postcardBook)) postcardBook = []; } catch { postcardBook = []; }
   let music, musicMuted = false, musicBlocked = false;
   let recovering = false, tiltEnabled = false, tiltBusy = false, tiltAttempt = 0;
   let lightingPreset = 'auto';
@@ -20,7 +22,7 @@
   $: me = host ? 0 : 1;
   $: playing = screen === 'game';
   $: delivery = hud?.delivery;
-  $: deliveryHint = !delivery ? '' : delivery.restored ? 'Nightjar is on the air again.' : delivery.phase === 'arrival' || delivery.destination ? 'Follow the chevrons. Fly through the mailbox bracket.' : (hud?.time ?? 0) < 8 ? 'Nightjar has gone quiet. Recover its lost mail.' : (hud?.time ?? 0) < 30 ? 'Static moths · line up with their opening wings.' : (hud?.time ?? 0) < 56 ? 'Parcel train · break the first seal. Follow the chain.' : 'Sign crab · climb toward its open repair socket.';
+  $: deliveryHint = delivery?.endless ? delivery.destination && !delivery.restored && delivery.destination.failedAt === null && (hud?.players?.[me]?.z ?? 0) - delivery.destination.z < 160 ? 'DELIVERY · follow the street chevrons with your mail' : delivery.event : !delivery ? '' : delivery.restored ? 'Nightjar is on the air again.' : 'Align with glowing targets · collect mail · follow delivery chevrons';
   const time = seconds => `${String(Math.floor((seconds || 0) / 60)).padStart(2, '0')}:${String(Math.floor((seconds || 0) % 60)).padStart(2, '0')}`;
 
   onMount(() => {
@@ -68,6 +70,10 @@
     const previousHp = hud?.players?.[me]?.hp;
     const currentHp = next?.players?.[me]?.hp;
     const mail = next?.delivery;
+    if (mail?.postcards?.some(card => !postcardBook.includes(card))) {
+      postcardBook = [...new Set([...postcardBook, ...mail.postcards])];
+      try { localStorage.setItem('afterlight-postcards', JSON.stringify(postcardBook)); } catch {}
+    }
     if (mail && lastDelivery && !musicMuted && !paused && !error && !document.hidden) {
       if (mail.restored && !lastDelivery.restored) deliveryAudio?.play('delivery');
       else if (mail.recovered + mail.bulbs > lastDelivery.recovered + lastDelivery.bulbs) deliveryAudio?.play('collect', mail.recovered);
@@ -231,7 +237,7 @@
       <section class="hero">
         <p class="eyebrow"><span></span> TWO PILOTS. ONE FREQUENCY.</p>
         <h1>TAKE THE<br /><em>SCENIC ROUTE.</em></h1>
-        {#if screen === 'menu'}<button class="quick-start" onclick={practice} disabled={!ready || busy}><span class="desktop-start">PRESS SPACE TO START</span><span class="phone-start">TAP TO START</span><small>{routeMode === 'delivery' ? '90-SECOND MAIL ROUTE ↗' : 'ENDLESS SOLO PRACTICE ↗'}</small></button>{/if}
+        {#if screen === 'menu'}<button class="quick-start" onclick={practice} disabled={!ready || busy}><span class="desktop-start">PRESS SPACE TO START</span><span class="phone-start">TAP TO START</span><small>{routeMode === 'delivery' ? 'ENDLESS COURIER ADVENTURE ↗' : 'ENDLESS SOLO PRACTICE ↗'}</small></button>{/if}
         <p class="intro">A little courier. A city waiting to hear from you.<br />Find the lost night mail. Bring Nightjar Radio back to life.</p>
         <div class="hero-tags"><span>01 — UNFOLD</span><span>02 — RECOVER</span><span>03 — DELIVER</span></div>
       </section>
@@ -241,8 +247,8 @@
         {#if screen !== 'lobby'}
           <div class="flight-setup">
             <label for="route-mode">YOUR ROUTE {screen === 'join' ? '— HOST DECIDES' : ''}</label>
-            <select id="route-mode" bind:value={routeMode} disabled={busy || screen === 'join'}><option value="delivery">Lost Night Mail · 90 seconds</option><option value="survival">Endless skyway · Survival</option></select>
-            <p class="setup-note">{routeMode === 'delivery' ? 'Recover letters and bulbs, then fly through Nightjar’s mailbox bracket. Solo or together.' : 'The original endless flight. Dodge rocks and collect upgrades.'}</p>
+            <select id="route-mode" bind:value={routeMode} disabled={busy || screen === 'join'}><option value="delivery">City encounters · Courier</option><option value="survival">Endless skyway · Survival</option></select>
+            <p class="setup-note">{routeMode === 'delivery' ? 'Solo: endless encounters and neighborhood deliveries. Together: a shared 90-second route.' : 'The original endless flight. Dodge rocks and collect upgrades.'}</p>
             <label for="difficulty">FLIGHT DIFFICULTY {screen === 'join' ? '— HOST DECIDES' : ''}</label>
             <select id="difficulty" bind:value={difficulty} disabled={busy || screen === 'join'}>{#each Object.entries(DIFFICULTIES) as [key,value]}<option value={key}>{value.label}</option>{/each}</select>
             <p class="setup-note">{difficulty==='brutal' ? 'No aim assist. Line up in height and direction. Double damage.' : difficulty==='easy' ? 'A gentler flight with assisted aim.' : 'Faster threats, assisted aim. Stay on the move.'}</p>
@@ -288,13 +294,13 @@
   {:else}
     <div class="hud">
       <div class="pilot-card" class:damage-flash={damageFlash}><span class="eyebrow">{(hud?.settings?.colors[me] ?? shipColor).toUpperCase()} / YOU</span><div class="health" role="img" aria-label={solo ? "Unlimited hull" : `Hull integrity: ${hud?.players[me]?.hp ?? 5} of 5`} style:--ship-color={SHIP_COLORS[hud?.settings?.colors[me] ?? shipColor]}>{#if solo}<span aria-hidden="true">♥ ∞</span>{:else}{#each Array(5) as _, i}<span class:empty={i >= (hud?.players[me]?.hp ?? 5)} aria-hidden="true">♥</span>{/each}{/if}</div><small>{#if delivery}AFTERLIGHT COURIER{:else}RATE {hud?.players[me]?.rate ?? 0} <b>/</b> SPREAD {1 + (hud?.players[me]?.spread ?? 0) * 2}{/if}</small>{#if !paused && !hud?.over && !error}<div class="telemetry-strip" aria-label="Flight telemetry"><span>FPS <b>{telemetry.fps || '—'}</b></span><span>PKT <b>{solo || telemetry.packetLoss == null ? '—' : `${Math.round(telemetry.packetLoss * 100)}%`}</b></span></div>{/if}{#if damageNotice && !paused && !hud?.over && !error}<div class="damage-feedback" role="status" aria-live="polite" aria-atomic="true">{damageNotice}</div>{/if}</div>
-      <div class="run-stats"><span>{delivery ? 'MAIL ROUTE 01' : `SECTOR ${String(hud?.wave ?? 1).padStart(2, '0')}`}</span><strong>{time(hud?.time)}</strong><small>{String(hud?.score ?? 0).padStart(6, '0')} PTS</small></div>
+      <div class="run-stats"><span>{delivery ? delivery.endless ? ['RADIO QUARTER', 'COMET MARKET', 'MOON GARDENS'][delivery.district ?? 0] : 'MAIL ROUTE 01' : `SECTOR ${String(hud?.wave ?? 1).padStart(2, '0')}`}</span><strong>{time(hud?.time)}</strong><small>{String(hud?.score ?? 0).padStart(6, '0')} PTS</small></div>
       <button class="pause-button" onclick={() => togglePause()} disabled={!!hud?.over || !!error}>Ⅱ <span>ESC / PAUSE</span></button>
     </div>
     {#if !solo}<div class="wingmate-status">WINGMATE <span class:down={hud?.players[1-me]?.hp === 0}>{hud?.players[1-me]?.hp === 0 ? 'SIGNAL LOST — KEEP FLYING' : `${hud?.players[1-me]?.hp ?? 5}/5 HULL`}</span></div>{/if}
     <div class="flight-instruments"><span>SPD <b data-testid="speed">{Math.round((FLIGHT_SPEED+(hud?.players[me]?.boost ?? 0))*3.6)}</b> km/h</span><span>ALT <b data-testid="altitude">{Math.round((hud?.players[me]?.y ?? 0)+4)}</b> m</span><span>{(hud?.settings?.difficulty ?? difficulty).toUpperCase()}</span></div>
-    {#if delivery}<aside class="delivery-status" aria-label="Delivery route"><span class="delivery-address">AFTERLIGHT POST → NIGHTJAR RADIO</span><div><strong>✉ {delivery.recovered ?? 0}</strong><span>LETTERS</span><strong>◇ {delivery.bulbs ?? 0}</strong><span>BULBS</span></div><p aria-live="polite">{deliveryHint}</p><div class="delivery-progress" role="progressbar" aria-label="Route progress" aria-valuenow={Math.min(90, Math.floor(hud?.time ?? 0))} aria-valuemin="0" aria-valuemax="90"><i style:width={`${Math.min(100, (hud?.time ?? 0) / 90 * 100)}%`}></i></div></aside>{:else}<div class="route-label"><span>SHIFT / BOOST · SPACE / CLIMB</span><strong>The Afterlight Skyway</strong></div>{/if}
-    <div class="game-hint">{delivery ? 'RECOVER THE LOST NIGHT MAIL' : 'BANK THROUGH THE SKYWAY'} <span>◇</span> {delivery ? 'DELIVER TO NIGHTJAR RADIO' : 'COLLECT UPGRADE CORES'} <span>◇</span> {hud?.settings?.difficulty==='brutal' ? 'ALIGN YOUR SHOTS' : 'WEAPONS AUTO-FIRE'}</div>
+    {#if delivery}<aside class="delivery-status" aria-label="City encounter"><span class="delivery-address">{delivery.endless ? ['RADIO QUARTER', 'COMET MARKET', 'MOON GARDENS'][delivery.district ?? 0] : 'AFTERLIGHT POST'}</span><div><strong>✉ {delivery.recovered ?? 0}</strong><span>MAIL</span><strong>◇ {delivery.bulbs ?? 0}</strong><span>BULBS</span>{#if delivery.endless}<span>▧ {delivery.postcards?.length ?? 0}/3</span>{/if}</div><p aria-live="polite">{deliveryHint}</p></aside>{:else}<div class="route-label"><span>SHIFT / BOOST · SPACE / CLIMB</span><strong>The Afterlight Skyway</strong></div>{/if}
+    <div class="game-hint">{delivery ? 'BRING THE CITY BACK TO LIFE' : 'BANK THROUGH THE SKYWAY'} <span>◇</span> {delivery ? 'ALIGN · RECOVER · DELIVER' : 'COLLECT UPGRADE CORES'} <span>◇</span> {hud?.settings?.difficulty==='brutal' ? 'ALIGN YOUR SHOTS' : 'WEAPONS AUTO-FIRE'}</div>
     {#if !paused && !hud?.over && !error}<div class="touch-controls">
       {#if controlMode==='drag'}<button aria-label="Drag to steer" class:boost-active={steeringBoost} class="touch-pad" onpointerdown={touchMove} onpointermove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))touchMove(e);}} onpointerup={releaseSteering} onpointercancel={releaseSteering} onlostpointercapture={releaseSteering}><span class="touch-stick" style:transform={`translate(${stick.x*28}px,${stick.z*28}px)`}>✥</span><span class="touch-boost-badge" aria-live="polite">{steeringBoost ? 'BOOST' : ''}</span></button>{:else}<button class="calibrate" disabled={tiltBusy} onclick={tiltEnabled ? ()=>tilt.calibrate() : enableTilt}>◎<br/>{tiltEnabled ? 'CALIBRATE TILT' : 'ENABLE TILT'}</button>{/if}
       <span class="touch-label">{controlMode==='drag'?(steeringBoost?'OUTER BOOST ACTIVE':'DRAG TO STEER · PULL OUT TO BOOST'):'TILT TO STEER · HOLD CLIMB TO RISE'}</span>
@@ -311,7 +317,7 @@
         {#if musicBlocked && !musicMuted}<p class="music-note" role="status">Music playback was blocked. Resume to try again.</p>{/if}
 {#if !hud?.over}<div class="control-settings"><label for="pause-steering">PHONE STEERING</label><select id="pause-steering" value={controlMode} onchange={e=>changeControls(e.currentTarget.value)}><option value="drag">Drag pad</option><option value="tilt">Tilt device</option></select>{#if controlMode==='tilt'}<button type="button" class="tilt-enable" disabled={tiltBusy} onclick={tiltEnabled ? ()=>tilt.calibrate() : enableTilt}>{tiltBusy ? 'ALLOW MOTION ACCESS…' : tiltEnabled ? 'CALIBRATE TILT' : 'ENABLE TILT'}</button>{/if}{#if controlMode==='drag'}<p class="setup-note">Pull beyond the pad’s outer ring to boost.</p>{/if}<label for="pause-sensitivity">STEERING SENSITIVITY</label><input id="pause-sensitivity" type="range" min="0.5" max="1.8" step="0.1" bind:value={sensitivity}/>{#if controlMessage}<p class="setup-note" role="status">{controlMessage}</p>{/if}</div>
         <div class="control-settings"><label for="pause-lighting-preset">TIME OF DAY</label><select id="pause-lighting-preset" value={lightingPreset} onchange={e => setLightingPreset(e.currentTarget.value)}>{#each LIGHTING_PRESET_OPTIONS as option}<option value={option.value}>{option.label}</option>{/each}</select>{#if lightingPreset === 'auto'}<p class="setup-note">Auto follows your device’s local time.</p>{/if}</div>
-        {/if}<div class="end-stats"><div><small>{delivery ? 'ROUTE TIME' : 'SURVIVED'}</small><strong>{time(hud?.time)}</strong></div><div><small>TEAM SCORE</small><strong>{hud?.score ?? 0}</strong></div></div>
+        {/if}{#if postcardBook.length}<div class="postcard-book" aria-label="Collected postcards">{#each postcardBook as card}<figure><div aria-hidden="true">{card === 'Nightjar Radio' ? '☾ )))' : card === 'Comet Coffee' ? '☄ ☕' : '✿ ☾'}</div><figcaption>{card}</figcaption></figure>{/each}</div>{/if}<div class="end-stats"><div><small>{delivery ? 'ROUTE TIME' : 'SURVIVED'}</small><strong>{time(hud?.time)}</strong></div><div><small>TEAM SCORE</small><strong>{hud?.score ?? 0}</strong></div></div>
         {#if !hud?.over && !error}<button class="primary full" onclick={() => togglePause()} disabled={recovering || !flags[me]}>{recovering ? 'RESTORING LINK…' : flags[me] ? 'RESUME FLIGHT' : 'WAITING FOR WINGMATE'} <span>→</span></button>{/if}
         {#if hud?.over}<button class="primary full" onclick={playAgain} disabled={replayPending || (!solo && !network?.connection?.open)}>{replayPending ? 'WAITING FOR WINGMATE…' : 'PLAY AGAIN'} <span>↻</span></button>{/if}
         <button class="secondary full" onclick={menu}>RETURN TO TERMINAL</button>

@@ -113,3 +113,19 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
 .delivery-postcard figcaption{font-size:12px;line-height:1.5;text-align:center;padding:10px 3px 3px}.delivery-postcard figcaption small{display:block;font-size:9px;margin-top:5px;color:#63777b}
 @media(max-width:680px),(pointer:coarse){.delivery-status{top:auto;bottom:191px;left:14px;width:225px;padding:8px 10px}.delivery-address{font-size:7px;margin-bottom:4px}.delivery-status strong{font-size:17px}.delivery-status p{font-size:10px;min-height:28px;margin:4px 0 6px}.delivery-status div>span{font-size:6px}.delivery-postcard .postcard-art{height:118px}}
 @media(max-height:500px){.delivery-status{top:auto;bottom:12px;left:auto;right:100px;width:230px;padding:7px 9px}.delivery-status p{min-height:0;margin:3px 0;font-size:9px}.delivery-address{font-size:6px;margin-bottom:2px}}
+
+/* Keep encounter guidance above the flight view and away from captured controls. */
+.delivery-status{top:228px;bottom:auto;width:290px;pointer-events:none}
+.delivery-status p{min-height:0}
+@media(max-width:680px),(pointer:coarse){
+ .delivery-status{top:202px;bottom:auto;left:14px;right:14px;width:auto;padding:6px 9px;box-shadow:none;background:#f7f0dedb}
+ .delivery-status .delivery-address{display:none}
+ .delivery-status>div:not(.delivery-progress){float:right;gap:5px;margin-left:8px}
+ .delivery-status strong{font-size:12px}.delivery-status div>span{font-size:6px;margin-right:2px}
+ .delivery-status p{font-size:9px;line-height:1.4;margin:0;min-height:26px;max-width:65%}
+}
+@media(max-height:500px){.delivery-status{top:8px;left:30%;right:30%;width:auto;padding:5px 8px}.delivery-status .delivery-address,.delivery-status>div{display:none!important}.delivery-status p{max-width:none;font-size:9px;min-height:0}}
+
+.postcard-book{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.postcard-book figure{margin:0;flex:1;min-width:85px;background:#efe5ce;border:3px solid #fff5df;color:#243e49}.postcard-book figure>div{padding:14px 4px;background:linear-gradient(160deg,#284e63 50%,#cc8274 51%,#809e8e);color:#ffe3a2;font-size:24px;text-align:center}.postcard-book figcaption{padding:6px;font-size:9px}
+@media(max-height:500px){.delivery-status{top:202px;bottom:auto;left:14px;right:14px;width:auto}}
+@media(max-height:500px) and (min-width:600px){.delivery-status{top:auto;bottom:12px;left:max(210px,30vw);right:max(90px,16vw);width:auto}}

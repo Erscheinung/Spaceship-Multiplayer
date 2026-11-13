@@ -34,7 +34,7 @@ test('delivery mode is canonical while survival keeps the endless rock simulatio
   survival.tick();
   assert.equal(survival.state.rocks.length, 1);
 
-  const delivery = new Simulation({ solo: true, settings: { mode: 'delivery' }, random: () => .5 });
+  const delivery = new Simulation({ solo: false, settings: { mode: 'delivery' }, random: () => .5 });
   assert.equal(delivery.state.delivery.phase, 'intro');
   assert.equal(delivery.state.delivery.deadline, 90);
   for (let index = 0; index < 60; index++) delivery.tick();
@@ -45,7 +45,7 @@ test('delivery mode is canonical while survival keeps the endless rock simulatio
 });
 
 test('first moth tell and natural shot stay in a clear city lane instead of behind the poster tower', () => {
-  const sim = new Simulation({ solo: true, settings: { mode: 'delivery' } });
+  const sim = new Simulation({ solo: false, settings: { mode: 'delivery' } });
   sim.setInput(0, { x: 0, z: 0, cruise: true });
   let moth = null;
   while (sim.state.time < 11 && moth?.completedAt == null) {
@@ -125,7 +125,7 @@ test('clockwork crab exposes a socket, repairs after a swept hit, and never beco
 });
 
 test('low flight safely bypasses crab auto-repair while a deliberate climb acquires its socket', () => {
-  const sim = new Simulation({ solo: true, settings: { mode: 'delivery' } });
+  const sim = new Simulation({ solo: false, settings: { mode: 'delivery' } });
   const delivery = sim.state.delivery;
   const pilot = sim.state.players[0];
   delivery.milestones = { moths: [true, true, true], parcels: true, crab: true, destination: true };
@@ -153,7 +153,7 @@ test('low flight safely bypasses crab auto-repair while a deliberate climb acqui
 });
 
 test('assisted delivery fire remains forward-only and ignores vulnerable targets behind the hull', () => {
-  const sim = new Simulation({ solo: true, settings: { mode: 'delivery' } });
+  const sim = new Simulation({ solo: false, settings: { mode: 'delivery' } });
   sim.state.time = 9.5;
   const delivery = sim.state.delivery;
   const p = sim.state.players[0];
@@ -236,7 +236,7 @@ test('swept collection is shared, stable-idempotent in co-op, and delivery can c
 });
 
 test('successful arrival remains visible until the nominal finish, then freezes a complete result', () => {
-  const sim = new Simulation({ solo: true, settings: { mode: 'delivery' } });
+  const sim = new Simulation({ solo: false, settings: { mode: 'delivery' } });
   const delivery = sim.state.delivery;
   const pilot = sim.state.players[0];
   sim.state.time = 86.9;
@@ -265,7 +265,7 @@ test('successful arrival remains visible until the nominal finish, then freezes 
 });
 
 test('zero recovered mail fails explicitly at the deadline and never restores the shop', () => {
-  const sim = new Simulation({ solo: true, settings: { mode: 'delivery' } });
+  const sim = new Simulation({ solo: false, settings: { mode: 'delivery' } });
   const delivery = sim.state.delivery;
   const pilot = sim.state.players[0];
   sim.state.time = 86.9;

@@ -86,7 +86,7 @@ export class Simulation {
     this.random = random; this.nextId = 1; this.spawnClock = 0;
     this.cleanFlight = [0, 0];
     this.inputs = [{ x: 0, z: 0 }, { x: 0, z: 0 }];
-    this.state = { settings: this.settings, time: 0, score: 0, wave: 1, over: false, players: [player(0, true), player(1, !solo)], rocks: [], bullets: [], pickups: [], effects: [], obstacles: cityObstacles(0), delivery: this.settings.mode === 'delivery' ? createDeliveryState() : null };
+    this.state = { settings: this.settings, time: 0, score: 0, wave: 1, over: false, players: [player(0, true), player(1, !solo)], rocks: [], bullets: [], pickups: [], effects: [], obstacles: cityObstacles(0), delivery: this.settings.mode === 'delivery' ? createDeliveryState(solo) : null };
   }
   setInput(id, input) {
     if (!this.inputs[id] || !input || !Number.isFinite(input.x) || !Number.isFinite(input.z)) return;
@@ -108,11 +108,17 @@ export class Simulation {
     const positionsBefore = s.players.map(p => ({ x: p.x, y: p.y ?? 0, z: p.z }));
     s.time += dt; s.obstacles = cityObstacles(s.time, s.players.filter(p => p.active && p.hp > 0)); s.wave = 1 + Math.floor(s.time / 25);
     let deliveryMotion = null;
-    const deliveryCallbacks = { score: points => { s.score += points; }, effect: (x, z, color, y) => this.burst(x, z, color, y) };
+    const deliveryCallbacks = { random: this.random, score: points => { s.score += points; }, effect: (x, z, color, y) => this.burst(x, z, color, y) };
     if (s.delivery) deliveryMotion = advanceDelivery(s.delivery, { time: s.time, dt, players: s.players, callbacks: deliveryCallbacks });
     else {
       this.spawnClock -= dt;
       if (this.spawnClock <= 0) { this.spawnRock(); this.spawnClock = Math.max(0.12, this.difficulty.spawn - s.time * 0.004); }
+    }
+    if (s.delivery?.endless) {
+      s.obstacles = s.obstacles.filter(obstacle => {
+        const distance = s.time * FLIGHT_SPEED - obstacle.z;
+        return !s.delivery.clearings.some(zone => distance >= zone.start && distance <= zone.end);
+      });
     }
     for (const p of s.players) {
       if (!p.active || p.hp <= 0) continue;

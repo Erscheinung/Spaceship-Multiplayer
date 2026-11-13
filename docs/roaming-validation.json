@@ -1,0 +1,305 @@
+[
+  {
+    "config": {
+      "name": "desktop",
+      "width": 1440,
+      "height": 900,
+      "preset": "day"
+    },
+    "kinds": [
+      "moth",
+      "parcel",
+      "crab",
+      "sorter"
+    ],
+    "sample": {
+      "median": 16.700000000000728,
+      "p95": 16.700000000000728,
+      "render": {
+        "frame": 21776,
+        "calls": 1,
+        "triangles": 1,
+        "points": 0,
+        "lines": 0
+      },
+      "metrics": {
+        "active": true,
+        "moths": 0,
+        "parcels": 0,
+        "crabs": 0,
+        "releases": 0,
+        "restored": true,
+        "drawables": 0,
+        "allocatedDrawables": 23,
+        "triangles": 0,
+        "geometries": 19,
+        "materials": 15,
+        "textures": 1,
+        "releaseLimit": 16,
+        "reducedMotion": false
+      },
+      "time": 22.66666666666666,
+      "over": false
+    },
+    "paired": {
+      "layerHidden": {
+        "median": 1.399999976158142,
+        "p95": 2.399999976158142
+      },
+      "encounters": {
+        "median": 1.300000011920929,
+        "p95": 2
+      },
+      "metrics": {
+        "active": true,
+        "moths": 0,
+        "parcels": 0,
+        "crabs": 0,
+        "releases": 0,
+        "restored": true,
+        "drawables": 37,
+        "allocatedDrawables": 43,
+        "triangles": 1117,
+        "geometries": 19,
+        "materials": 15,
+        "textures": 1,
+        "releaseLimit": 16,
+        "reducedMotion": false
+      }
+    },
+    "layout": {
+      "overflow": false,
+      "guide": {
+        "x": 28,
+        "y": 228,
+        "right": 318,
+        "bottom": 333.5
+      },
+      "controls": [
+        {
+          "x": 0,
+          "y": 0,
+          "right": 0,
+          "bottom": 0
+        },
+        {
+          "x": 0,
+          "y": 0,
+          "right": 0,
+          "bottom": 0
+        }
+      ],
+      "overlap": false
+    },
+    "postcardsPersist": true,
+    "panelBounds": {
+      "x": 490,
+      "y": 58.203125,
+      "width": 460,
+      "height": 783.578125
+    },
+    "errors": []
+  },
+  {
+    "config": {
+      "name": "phone",
+      "width": 393,
+      "height": 705,
+      "preset": "night"
+    },
+    "kinds": [
+      "moth",
+      "parcel",
+      "crab",
+      "sorter"
+    ],
+    "sample": {
+      "median": 16.69999999999709,
+      "p95": 16.700000000000728,
+      "render": {
+        "frame": 21344,
+        "calls": 1,
+        "triangles": 1,
+        "points": 0,
+        "lines": 0
+      },
+      "metrics": {
+        "active": true,
+        "moths": 0,
+        "parcels": 0,
+        "crabs": 0,
+        "releases": 0,
+        "restored": true,
+        "drawables": 0,
+        "allocatedDrawables": 23,
+        "triangles": 0,
+        "geometries": 19,
+        "materials": 15,
+        "textures": 1,
+        "releaseLimit": 16,
+        "reducedMotion": false
+      },
+      "time": 22.16666666666669,
+      "over": false
+    },
+    "paired": {
+      "layerHidden": {
+        "median": 1.300000011920929,
+        "p95": 2.899999976158142
+      },
+      "encounters": {
+        "median": 1.300000011920929,
+        "p95": 3.100000023841858
+      },
+      "metrics": {
+        "active": true,
+        "moths": 0,
+        "parcels": 0,
+        "crabs": 0,
+        "releases": 0,
+        "restored": true,
+        "drawables": 37,
+        "allocatedDrawables": 43,
+        "triangles": 1117,
+        "geometries": 19,
+        "materials": 15,
+        "textures": 1,
+        "releaseLimit": 16,
+        "reducedMotion": false
+      }
+    },
+    "layout": {
+      "overflow": false,
+      "guide": {
+        "x": 14,
+        "y": 202,
+        "right": 379,
+        "bottom": 242
+      },
+      "controls": [
+        {
+          "x": 78.59375,
+          "y": 549.21875,
+          "right": 182.59375,
+          "bottom": 653.21875
+        },
+        {
+          "x": 315,
+          "y": 568,
+          "right": 381,
+          "bottom": 642
+        }
+      ],
+      "overlap": false
+    },
+    "postcardsPersist": true,
+    "panelBounds": {
+      "x": 20,
+      "y": 28.203125,
+      "width": 353,
+      "height": 648.59375
+    },
+    "errors": []
+  },
+  {
+    "config": {
+      "name": "landscape",
+      "width": 844,
+      "height": 390,
+      "preset": "golden"
+    },
+    "kinds": [
+      "moth",
+      "parcel",
+      "crab",
+      "sorter"
+    ],
+    "sample": {
+      "median": 16.700000000000728,
+      "p95": 16.700000000000728,
+      "render": {
+        "frame": 21360,
+        "calls": 1,
+        "triangles": 1,
+        "points": 0,
+        "lines": 0
+      },
+      "metrics": {
+        "active": true,
+        "moths": 0,
+        "parcels": 0,
+        "crabs": 0,
+        "releases": 0,
+        "restored": true,
+        "drawables": 0,
+        "allocatedDrawables": 23,
+        "triangles": 0,
+        "geometries": 19,
+        "materials": 15,
+        "textures": 1,
+        "releaseLimit": 16,
+        "reducedMotion": false
+      },
+      "time": 22.16666666666669,
+      "over": false
+    },
+    "paired": {
+      "layerHidden": {
+        "median": 1,
+        "p95": 1.5
+      },
+      "encounters": {
+        "median": 1.0999999642372131,
+        "p95": 1.5
+      },
+      "metrics": {
+        "active": true,
+        "moths": 0,
+        "parcels": 0,
+        "crabs": 0,
+        "releases": 0,
+        "restored": true,
+        "drawables": 37,
+        "allocatedDrawables": 43,
+        "triangles": 1117,
+        "geometries": 19,
+        "materials": 15,
+        "textures": 1,
+        "releaseLimit": 16,
+        "reducedMotion": false
+      }
+    },
+    "layout": {
+      "overflow": false,
+      "guide": {
+        "x": 253.1875,
+        "y": 353.40625,
+        "right": 708.96875,
+        "bottom": 378
+      },
+      "controls": [
+        {
+          "x": 109.5,
+          "y": 268.21875,
+          "right": 194.5,
+          "bottom": 353.21875
+        },
+        {
+          "x": 772,
+          "y": 281,
+          "right": 832,
+          "bottom": 346
+        }
+      ],
+      "overlap": false
+    },
+    "postcardsPersist": true,
+    "panelBounds": {
+      "x": 192,
+      "y": 15.609375,
+      "width": 460,
+      "height": 358.796875
+    },
+    "errors": []
+  }
+]

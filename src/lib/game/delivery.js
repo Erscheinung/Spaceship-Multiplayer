@@ -81,9 +81,10 @@ function clearEncounterAnchor(pilot, time, approach, preferredX, preferredY, { s
   return { approach, x: clamp(preferredX, -10.5, 10.5), y: 24 };
 }
 
-export function createDeliveryState() {
+export function createDeliveryState(endless = false) {
   return {
     phase: 'intro',
+    endless, clearings: [], nextEncounter: 5, encounterSerial: 0, bag: [], event: 'Cruise the city · encounters ahead', district: 0, postcards: [], deliveries: 0,
     elapsed: 0,
     deadline: DELIVERY_DEADLINE,
     recovered: 0,
@@ -132,8 +133,8 @@ function targetBase(id, kind, encounter, pilot, time, approach, xOffset, yOffset
 
 function spawnMoth(delivery, players, time, index) {
   const pilot = leadPilot(players);
-  const offsets = [-5.5, 5, -2];
-  const heights = [4, 7, 3];
+  const offsets = [-2, 2, 0];
+  const heights = [0, 1, 0];
   // Fast pilots need more warning distance; ordinary cruise uses the nearer
   // clear block gap so the first moth appears before, rather than behind, the
   // market poster tower that previously swallowed its entire tell.
@@ -150,7 +151,7 @@ function spawnParcels(delivery, players, time) {
   const pilot = leadPilot(players);
   const chainLength = 4;
   const preferredX = pilot.x * .65;
-  const anchor = clearEncounterAnchor(pilot, time, 165, preferredX, (pilot.y ?? 0) + 5, { sway: 3.5, depth: (chainLength - 1) * 7 });
+  const anchor = clearEncounterAnchor(pilot, time, 165, preferredX, (pilot.y ?? 0) + 1, { sway: 3.5, depth: (chainLength - 1) * 7 });
   const base = targetBase('mail-parcel-1', 'parcel', 'parcel-train', pilot, time, anchor.approach, anchor.x - pilot.x, anchor.y - (pilot.y ?? 0), 1.5);
   for (let index = 0; index < chainLength; index++) {
     const target = {
@@ -174,7 +175,7 @@ function spawnParcels(delivery, players, time) {
 function spawnCrab(delivery, players, time) {
   const pilot = leadPilot(players);
   const preferredX = pilot.x + (pilot.x > 0 ? -5 : 5);
-  const anchor = clearEncounterAnchor(pilot, time, 175, preferredX, (pilot.y ?? 0) + 8);
+  const anchor = clearEncounterAnchor(pilot, time, 175, preferredX, (pilot.y ?? 0) + 2);
   const target = targetBase('mail-crab-1', 'crab', 'sign-crab', pilot, time, anchor.approach, anchor.x - pilot.x, anchor.y - (pilot.y ?? 0), 2.1);
   target.repairAt = null;
   delivery.targets.push(target);
@@ -187,6 +188,7 @@ function spawnDestination(delivery, players, time) {
   // this places the shop about twelve seconds away while still letting boost
   // produce an earlier, earned arrival.
   const routeDistance = courseProgress(pilot, time) + (FLIGHT_SPEED + 25) * 12;
+  if (delivery.endless) delivery.clearings.push({ start: routeDistance - 170, end: routeDistance + 50 });
   delivery.destination = {
     id: 'mail-destination',
     shop: 'nightjar-radio',
@@ -318,6 +320,15 @@ export function advanceDelivery(delivery, { time, dt, players, callbacks = {} })
   const targetStarts = new Map(delivery.targets.map(target => [target.id, { x: target.x, y: target.y, z: target.z }]));
   const destinationStart = delivery.destination ? { x: delivery.destination.x, y: delivery.destination.y, z: delivery.destination.z } : null;
 
+  if (delivery.endless) {
+    const lead = leadPilot(players);
+    delivery.targets = delivery.targets.filter(target => target.z < lead.z + 28);
+    delivery.releases = delivery.releases.filter(release => release.z < lead.z + 28);
+    if (time >= delivery.nextEncounter) spawnRoamingEncounter(delivery, players, time, callbacks.random ?? Math.random);
+    if (delivery.destination && time - delivery.destination.spawnedAt > 20) {
+      delivery.destination = null; delivery.restored = false;
+    }
+  } else {
   const mothTimes = [8, 15, 22];
   for (let index = 0; index < mothTimes.length; index++) {
     if (!delivery.milestones.moths[index] && time >= mothTimes[index]) spawnMoth(delivery, players, time, index);
@@ -326,10 +337,14 @@ export function advanceDelivery(delivery, { time, dt, players, callbacks = {} })
   if (!delivery.milestones.crab && time >= 60) spawnCrab(delivery, players, time);
   if (!delivery.milestones.destination && time >= 75) spawnDestination(delivery, players, time);
 
+  }
+
   for (const target of delivery.targets) {
+    if (target.kind === 'sorter' && target.completedAt === null) target.routeDistance += dt * 18;
     target.z = routePosition(target.routeDistance, time);
     if (target.kind === 'moth') updateMoth(target, time);
     else if (target.kind === 'parcel') updateParcel(delivery, target, time, callbacks);
+    else if (target.kind === 'sorter') updateSorter(delivery, target, time, callbacks);
     else updateCrab(target, time, callbacks, delivery);
   }
   for (const release of delivery.releases) {
@@ -338,7 +353,7 @@ export function advanceDelivery(delivery, { time, dt, players, callbacks = {} })
     release.life -= dt;
   }
   if (delivery.destination) delivery.destination.z = routePosition(delivery.destination.routeDistance, time);
-  delivery.phase = timelinePhase(delivery, time);
+  delivery.phase = delivery.endless ? 'roaming' : timelinePhase(delivery, time);
   return { releaseStarts, targetStarts, destinationStart };
 }
 
@@ -368,9 +383,9 @@ function triggerParcelTrain(delivery, time, callbacks) {
     parcel.open = true;
     parcel.vulnerable = false;
   }
-  callbacks.effect?.(delivery.targets.find(target => target.id === 'mail-parcel-1')?.x ?? 0,
-    delivery.targets.find(target => target.id === 'mail-parcel-1')?.z ?? 0, 'coral',
-    delivery.targets.find(target => target.id === 'mail-parcel-1')?.y ?? 0);
+  callbacks.effect?.(delivery.targets.find(target => target.kind === 'parcel' && target.chainIndex === 0)?.x ?? 0,
+    delivery.targets.find(target => target.kind === 'parcel' && target.chainIndex === 0)?.z ?? 0, 'coral',
+    delivery.targets.find(target => target.kind === 'parcel' && target.chainIndex === 0)?.y ?? 0);
 }
 
 // Shots use a relative sweep against the moving target, rather than testing
@@ -388,7 +403,13 @@ export function hitDeliveryTargets(delivery, { bullets, bulletStarts, targetStar
       bullet.life = 0;
       if (target.kind === 'moth') releaseMoth(delivery, target, time, callbacks);
       else if (target.kind === 'parcel') triggerParcelTrain(delivery, time, callbacks);
-      else {
+      else if (target.kind === 'sorter') {
+        target.drawers++;
+        target.vulnerable = false; target.nextDrawer = time + .4;
+        addRelease(delivery, target, 'letter', `drawer-${target.drawers}`, time);
+        callbacks.score?.(150); callbacks.effect?.(target.x, target.z, 'gold', target.y);
+        if (target.drawers >= 3) { target.completedAt = time; target.stage = 'stamped'; delivery.repaired++; }
+      } else {
         target.repairAt = time + .55;
         target.stage = 'repairing';
         target.vulnerable = false;
@@ -451,13 +472,20 @@ export function collectDelivery(delivery, { players, playerStarts, releaseStarts
   const start = destinationStart ?? destination;
   for (const pilot of livePilots(players)) {
     const pilotStart = playerStarts[pilot.id] ?? pilot;
-    if (!relativeSweep(pilotStart, pilot, start, destination, { x: 12, y: 14, z: 13 })) continue;
-    if (delivery.recovered > 0) {
+    if (!relativeSweep(pilotStart, pilot, start, destination, { x: 12, y: 14, z: delivery.endless ? 55 : 13 })) continue;
+    if ((delivery.endless ? delivery.rack.reduce((sum, rack) => sum + rack.letters, 0) : delivery.recovered) > 0) {
       destination.deliveredAt = time;
-      delivery.delivered = delivery.recovered;
+      delivery.delivered = delivery.endless ? delivery.delivered + delivery.rack.reduce((sum, rack) => sum + rack.letters, 0) : delivery.recovered;
       delivery.restored = true;
       delivery.grade = gradeFor(delivery);
       delivery.success = true;
+      if (delivery.endless) {
+        delivery.deliveries++;
+        const card = ['Nightjar Radio', 'Comet Coffee', 'Moss & Moon'][delivery.district];
+        if (!delivery.postcards.includes(card)) delivery.postcards.push(card);
+        delivery.event = `${card} restored · postcard collected`;
+        delivery.nextEncounter = Math.max(delivery.nextEncounter, time + 7);
+      }
       delivery.rack.forEach(rack => { rack.letters = 0; rack.bulbs = 0; });
       callbacks.score?.(500 + delivery.delivered * 100);
       callbacks.effect?.(destination.x, destination.z, 'cyan', destination.y);
@@ -489,11 +517,12 @@ function finish(delivery, time, success, reason) {
 export function finishDelivery(delivery, { time, allPilotsLost = false }) {
   delivery.targets = delivery.targets.filter(target => target.completedAt === null
     ? target.z < 45
-    : time - target.completedAt <= TARGET_LINGER);
+    : time - target.completedAt <= (target.kind === 'crab' || target.kind === 'sorter' ? 2.5 : TARGET_LINGER));
   delivery.releases = delivery.releases.filter(release => release.collectedAt === null
     ? release.life > 0 && release.z < 45
     : time - release.collectedAt <= RELEASE_LINGER);
 
+  if (delivery.endless) return allPilotsLost;
   if (delivery.completed) return true;
   if (allPilotsLost) {
     finish(delivery, time, false, 'lost');
@@ -511,4 +540,51 @@ export function finishDelivery(delivery, { time, allPilotsLost = false }) {
     return true;
   }
   return false;
+}
+
+// A shuffled bag guarantees every phrase while varying order and quiet spacing.
+// Only the host samples randomness; snapshots carry all stable encounter IDs.
+function spawnRoamingEncounter(delivery, players, time, random) {
+  if (!delivery.bag.length) {
+    delivery.bag = ['moth', 'parcel', 'crab', 'sorter'];
+    for (let i = delivery.bag.length - 1; i > 0; i--) {
+      const j = Math.min(i, Math.floor(random() * (i + 1)));
+      [delivery.bag[i], delivery.bag[j]] = [delivery.bag[j], delivery.bag[i]];
+    }
+  }
+  const kind = delivery.bag.pop();
+  const before = delivery.targets.length;
+  const progress = courseProgress(leadPilot(players), time);
+  delivery.clearings = delivery.clearings.filter(zone => zone.end > progress - 80);
+  delivery.clearings.push({ start: progress - 25, end: progress + 330 });
+  if (kind === 'moth') spawnMoth(delivery, players, time, delivery.encounterSerial % 3);
+  if (kind === 'parcel') spawnParcels(delivery, players, time);
+  if (kind === 'crab') spawnCrab(delivery, players, time);
+  if (kind === 'sorter') {
+    const pilot = leadPilot(players);
+    const anchor = clearEncounterAnchor(pilot, time, 150, pilot.x, (pilot.y ?? 0) + 1);
+    const target = targetBase('sorter', 'sorter', 'night-sorter', pilot, time, anchor.approach, anchor.x - pilot.x, anchor.y - (pilot.y ?? 0), 3.4);
+    target.drawers = 0; target.nextDrawer = time + 1; delivery.targets.push(target);
+  }
+  delivery.encounterSerial++;
+  for (const target of delivery.targets.slice(before)) {
+    target.id += `-event-${delivery.encounterSerial}`;
+    target.baseY = clamp((leadPilot(players).y ?? 0) + (kind === 'crab' ? 2 : 1), 2, 23);
+    target.y = target.baseY;
+  }
+  delivery.event = { moth: 'STATIC MOTH · align with the glowing chest', parcel: 'PARCEL TRAIN · aim at the first seal', crab: 'SIGN CRAB · align to repair its open socket', sorter: 'NIGHT SORTER · open three glowing drawers' }[kind];
+  delivery.nextEncounter = time + 15 + random() * 5;
+  if (delivery.encounterSerial % 4 === 0 && !delivery.destination) {
+    delivery.district = Math.floor(delivery.encounterSerial / 4 - 1) % 3;
+    spawnDestination(delivery, players, time);
+    delivery.destination.shop = ['nightjar-radio', 'comet-coffee', 'moss-moon'][delivery.district];
+    delivery.restored = false; delivery.success = null;
+  }
+}
+function updateSorter(delivery, target, time, callbacks) {
+  if (target.completedAt !== null) { target.stage = 'stamped'; target.vulnerable = false; return; }
+  target.x = target.baseX + Math.sin((time - target.spawnedAt) * .65) * .8;
+  target.open = true; target.tell = 1;
+  target.vulnerable = time >= target.nextDrawer;
+  target.stage = target.vulnerable ? 'sorting' : 'opening';
 }

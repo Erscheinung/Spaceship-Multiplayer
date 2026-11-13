@@ -9,7 +9,7 @@ const TEAL = 0x55b6b1;
 const COPPER = 0xb8734e;
 const WARM = 0xffc96b;
 const NIGHT = 0x17283d;
-const RELEASE_LIMIT = 6;
+const RELEASE_LIMIT = 16;
 
 const clamp01 = value => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 const smooth = value => { const t = clamp01(value); return t * t * (3 - 2 * t); };
@@ -224,20 +224,28 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
     return group;
   }
 
-  function createRack() {
+  function createSorter() {
     const group = new THREE.Group();
-    cube(group, inkMaterial, [0, -.14, 0], [2.3, .14, .18]); cube(group, copperMaterial, [-1.05, .25, 0], [.12, .8, .12]); cube(group, copperMaterial, [1.05, .25, 0], [.12, .8, .12]);
-    const letters = [], bulbs = [];
+    // Wide post-office carriage, three real drawers and a toothed bellows roof.
+    cube(group, inkMaterial, [0, 0, 0], [7.5, 3.2, 2.4]);
+    cube(group, coralMaterial, [0, 1.85, 0], [8.2, .4, 2.8]);
+    for (let i = -3; i <= 3; i++) cube(group, copperMaterial, [i, 2.35, 0], [.35, .7, 2]);
+    const drawers = [];
     for (let i = 0; i < 3; i++) {
-      const letter = new THREE.Mesh(envelopeGeometry, i % 2 ? coralMaterial : ivoryMaterial); letter.scale.set(.47, .47, .47); letter.position.set((i - 1) * .7, .38 + i * .06, 0); group.add(letter); letters.push(letter);
-      const bulb = orb(group, warmMaterial, [(i - 1) * .64, -.16, .22], [.14, .14, .1]); bulbs.push(bulb);
+      const drawer = new THREE.Group(); drawer.position.set((i - 1) * 2.35, 0, 1.3); group.add(drawer);
+      cube(drawer, ivoryMaterial, [0, 0, 0], [2.1, 2.4, .4]);
+      cube(drawer, warmMaterial, [0, .1, .25], [1.2, .3, .15]);
+      const letter = new THREE.Mesh(envelopeGeometry, coralMaterial); letter.scale.setScalar(.65); letter.position.set(0, -.5, .3); drawer.add(letter);
+      drawers.push(drawer);
     }
-    group.userData = { letters, bulbs }; group.visible = false; return group;
+    for (const side of [-1, 1]) orb(group, tealMaterial, [side * 3, -1.8, 0], [.8, .8, .55]);
+    group.userData.drawers = drawers; return group;
   }
 
+  const sorterMap = new Map(), sorterPool = [];
   const mothMap = new Map(), parcelMap = new Map(), crabMap = new Map(), releaseMap = new Map();
   const mothPool = [], parcelPool = [], crabPool = [], letterPool = [], bulbPool = [];
-  const racks = [createRack(), createRack()]; racks.forEach(item => root.add(item));
+  const racks = []; // Cargo is counted in the compact HUD; no floating hammer silhouette.
 
   const landmark = new THREE.Group(); landmark.name = 'nightjar-radio'; root.add(landmark);
   // Short roadside brackets mark the threshold without putting a beam or a
@@ -251,6 +259,7 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
     [-16.8, -.25, -.08, 4.8, 7.1, 1.9], [16.3, -1.15, -.08, 3.8, 5.3, 1.9]
   ]);
   const trimGeometry = mergedBoxes([
+    [14.9, 3.1, .9, .12, 3.4, .12], [17.7, 3.1, .9, .12, 3.4, .12],
     [-16.8, -3.72, .02, 5.2, .25, 2.12], [-16.8, 3.32, .02, 5.2, .28, 2.12],
     [16.3, -3.72, .02, 4.2, .25, 2.12], [16.3, 1.45, .02, 4.2, .28, 2.12],
     [-18.95, -.25, .93, .18, 7.1, .18], [-14.65, -.25, .93, .18, 7.1, .18],
@@ -275,7 +284,8 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
   landmark.add(new THREE.Mesh(trimGeometry, copperMaterial));
   landmark.add(new THREE.Mesh(ivoryDetailGeometry, ivoryMaterial));
   landmark.add(new THREE.Mesh(coralDetailGeometry, coralMaterial));
-  const sign = new THREE.Mesh(nightjarSignGeometry, atlasDimMaterial); sign.position.set(-15, 4.65, .92); landmark.add(sign);
+  landmark.traverse(object => { if (object.isMesh) { object.castShadow = true; object.receiveShadow = true; } });
+  const sign = new THREE.Mesh(nightjarSignGeometry, atlasDimMaterial); sign.position.set(16.3, 3.2, 1.02); landmark.add(sign);
   const windows = [];
   for (const spec of [{ x: -16.8, y: .12, w: 3.9, h: 2.55 }, { x: 16.3, y: -.68, w: 3, h: 1.9 }]) {
     const window = cube(landmark, glassDarkMaterial, [spec.x, spec.y, .96], [spec.w, spec.h, .08]); windows.push(window);
@@ -289,7 +299,7 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
   const mailbox = new THREE.Mesh(mailboxGeometry, atlasBrightMaterial); mailbox.position.set(14.65, -2.08, 1.08); mailbox.scale.set(.76, .76, .76); landmark.add(mailbox);
   cube(landmark, inkMaterial, [14.65, -1.52, 1.12], [.8, .12, .08]);
 
-  const aerial = new THREE.Group(); aerial.position.set(-16.8, 8.45, 0); aerial.add(new THREE.Mesh(aerialGeometry, copperMaterial)); landmark.add(aerial);
+  const aerial = new THREE.Group(); aerial.position.set(16.3, 4.8, 0); aerial.add(new THREE.Mesh(aerialGeometry, copperMaterial)); landmark.add(aerial);
   const chevronPositions = [], chevronIndices = [];
   const chevronArm = (x1, z1, x2, z2) => {
     const length = Math.hypot(x2 - x1, z2 - z1), width = .17;
@@ -302,6 +312,12 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
   chevronGeometry.setAttribute('position', new THREE.Float32BufferAttribute(chevronPositions, 3)); chevronGeometry.setIndex(chevronIndices); chevronGeometry.computeVertexNormals();
   const chevrons = [];
   for (let i = 0; i < 3; i++) { const mark = new THREE.Mesh(chevronGeometry, chevronMaterial); mark.position.set(0, -3.68, 8 + i * 8); mark.scale.setScalar(1 + i * .12); landmark.add(mark); chevrons.push(mark); }
+  const coffee = new THREE.Group(); coffee.position.set(16.3, 5.5, 0); landmark.add(coffee);
+  const cup = new THREE.Mesh(cylinderGeometry, ivoryMaterial); cup.scale.set(1.1, 1.7, 1.1); coffee.add(cup);
+  const handle = new THREE.Mesh(geometry(new THREE.TorusGeometry(.6, .16, 5, 10)), copperMaterial); handle.position.x = 1.2; coffee.add(handle);
+  const flower = new THREE.Group(); flower.position.set(16.3, 5.75, 0); landmark.add(flower);
+  for(let i=0;i<6;i++) orb(flower, coralMaterial, [Math.cos(i*Math.PI/3)*1.1, Math.sin(i*Math.PI/3)*1.1, 0], [.8,.8,.25]);
+  orb(flower, warmMaterial, [0,0,.3], [.65,.65,.3]);
   landmark.visible = false;
 
   const syncPool = (items, map, pool, create, update, poolLimit = 8) => {
@@ -325,17 +341,28 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
     return 0;
   };
 
+  let lastDistrict = -1;
   let lastDebug = { active: false, moths: 0, parcels: 0, crabs: 0, releases: 0, restored: false };
   function update({ delivery, players = [], time = 0, dt = 1 / 60 } = {}) {
     root.visible = Boolean(delivery);
     if (!delivery) {
       landmark.visible = false; racks.forEach(item => { item.visible = false; });
+      syncPool([], sorterMap, sorterPool, createSorter, () => {});
       syncPool([], mothMap, mothPool, createMoth, () => {}); syncPool([], parcelMap, parcelPool, createParcel, () => {}); syncPool([], crabMap, crabPool, createCrab, () => {});
       for (const [id, object] of releaseMap) { releaseMap.delete(id); object.removeFromParent(); (object.userData.fold ? letterPool : bulbPool).push(object); }
       lastDebug = { active: false, moths: 0, parcels: 0, crabs: 0, releases: 0, restored: false }; return;
     }
 
     const targets = Array.isArray(delivery.targets) ? delivery.targets : [];
+    syncPool(targets.filter(item => item.kind === 'sorter'), sorterMap, sorterPool, createSorter, (object, target) => {
+      place(object, target.x, target.y, routeZ(target, time), time);
+      object.userData.drawers.forEach((drawer, i) => {
+        drawer.position.z = i < target.drawers ? 2.5 : 1.3;
+        drawer.rotation.x = i < target.drawers ? -.3 : 0;
+        drawer.children[1].material = i === target.drawers ? warmMaterial : tealMaterial;
+      });
+      object.scale.setScalar(target.completedAt == null ? 1 : Math.max(.05, 1 - Math.max(0, time - target.completedAt - 1.8) / .7));
+    });
     const moths = targets.filter(item => item.kind === 'moth');
     const parcels = targets.filter(item => item.kind === 'parcel');
     const crabs = targets.filter(item => item.kind === 'crab');
@@ -367,7 +394,7 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
       object.userData.tools.forEach((tool, index) => { tool.visible = open > .72; tool.rotation.z += reduceMotion ? 0 : Math.sin(time * 5 + index) * dt * .08; });
       object.userData.antennae.forEach((antenna, index) => { antenna.rotation.z = reduceMotion ? 0 : Math.sin(time * 3.2 + index * 2) * .08; });
       const repaired = target.stage === 'repaired'; object.userData.socket.material = repaired ? warmMaterial : tealMaterial;
-      const release = repaired && Number.isFinite(target.completedAt) ? clamp01((time - target.completedAt) / .7) : 0;
+      const release = repaired && Number.isFinite(target.completedAt) ? clamp01((time - target.completedAt - 1.8) / .7) : 0;
       object.scale.setScalar(Math.max(.04, mix(Math.max(.8, Math.min(1.2, (target.r ?? 2.5) / 2.5)), .04, release)));
     });
 
@@ -400,6 +427,19 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
       rack.userData.bulbs.forEach((bulb, bulbIndex) => { bulb.visible = bulbIndex < Math.min(3, Math.max(0, cargo.bulbs ?? 0)); });
     });
 
+    const district = delivery.district ?? 0;
+    coffee.visible = district === 1; flower.visible = district === 2; aerial.visible = district === 0;
+    if (!reduceMotion) flower.rotation.z = delivery.restored ? Math.sin(time) * .12 : 0;
+    if (district !== lastDistrict && atlas.image?.getContext) {
+      lastDistrict = district;
+      const ctx = atlas.image.getContext('2d');
+      ctx.fillStyle = ['#17283d', '#633e46', '#214b49'][district]; ctx.fillRect(0, 0, 512, 256);
+      ctx.strokeStyle = '#ffc96b'; ctx.lineWidth = 10; ctx.strokeRect(12, 12, 488, 232);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#f3ead2'; ctx.font = '800 65px system-ui';
+      ctx.fillText(['NIGHTJAR', 'COMET', 'MOSS &'][district], 256, 108);
+      ctx.fillStyle = '#ffc96b'; ctx.fillText(['RADIO', 'COFFEE', 'MOON'][district], 256, 192);
+      atlas.needsUpdate = true;
+    }
     const destination = delivery.destination;
     landmark.visible = Boolean(destination);
     if (destination) {
@@ -417,7 +457,8 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
       // that successful play—not only the HUD—shows the lit final state.
       const lead = players.filter(player => player?.active && player.hp > 0).reduce((best, player) => !best || player.z < best.z ? player : best, null);
       const heldZ = lead ? lead.z - 30 : actualZ;
-      const displayZ = restored ? mix(actualZ, Math.min(actualZ, heldZ), holdProgress) : actualZ;
+      const displayZ = restored && !delivery.endless ? mix(actualZ, Math.min(actualZ, heldZ), holdProgress) : actualZ;
+      if (delivery.endless && lead && actualZ > lead.z + 12) landmark.visible = false;
       const displayX = restored && lead ? mix(destination.x ?? 0, lead.x * .12, holdProgress) : (destination.x ?? 0);
       place(landmark, displayX, 0, displayZ, time);
       sign.material = restoreProgress > .35 ? atlasBrightMaterial : atlasDimMaterial;
@@ -444,7 +485,7 @@ export function createDeliveryVisuals(scene, { reducedMotion } = {}) {
   function dispose() {
     motionQuery?.removeEventListener?.('change', motionListener);
     root.removeFromParent(); geometries.forEach(item => item.dispose()); materials.forEach(item => item.dispose()); atlas.dispose();
-    mothMap.clear(); parcelMap.clear(); crabMap.clear(); releaseMap.clear();
+    sorterMap.clear(); mothMap.clear(); parcelMap.clear(); crabMap.clear(); releaseMap.clear();
   }
 
   return { root, update, metrics, dispose };
