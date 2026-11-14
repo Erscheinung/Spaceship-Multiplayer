@@ -118,14 +118,14 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
 .delivery-status{top:228px;bottom:auto;width:290px;pointer-events:none}
 .delivery-status p{min-height:0}
 @media(max-width:680px),(pointer:coarse){
- .delivery-status{top:202px;bottom:auto;left:14px;right:14px;width:auto;padding:6px 9px;box-shadow:none;background:#f7f0dedb}
+ .delivery-status{top:auto;bottom:160px;left:14px;right:auto;width:200px;padding:5px 8px;box-shadow:none;background:#f7f0dec8;border-left:2px solid #b65c4b;border-top:0;border-right:0;border-bottom:0;backdrop-filter:blur(4px)}
  .delivery-status .delivery-address{display:none}
- .delivery-status>div:not(.delivery-progress){float:right;gap:5px;margin-left:8px}
- .delivery-status strong{font-size:12px}.delivery-status div>span{font-size:6px;margin-right:2px}
- .delivery-status p{font-size:9px;line-height:1.4;margin:0;min-height:26px;max-width:65%}
+ .delivery-status>div:not(.delivery-progress){display:flex;flex-wrap:nowrap;gap:4px;margin-bottom:2px}
+ .delivery-status strong{font-size:11px}.delivery-status div>span{font-size:5px;margin-right:1px}
+ .delivery-status p{font-size:8px;line-height:1.3;margin:0;min-height:0;max-width:none;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 }
-@media(max-height:500px){.delivery-status{top:8px;left:30%;right:30%;width:auto;padding:5px 8px}.delivery-status .delivery-address,.delivery-status>div{display:none!important}.delivery-status p{max-width:none;font-size:9px;min-height:0}}
+@media(max-height:500px){.delivery-status{top:auto;bottom:100px;left:14px;right:auto;width:180px;padding:4px 7px}.delivery-status .delivery-address,.delivery-status>div{display:none!important}.delivery-status p{max-width:none;font-size:8px;min-height:0}}
 
 .postcard-book{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.postcard-book figure{margin:0;flex:1;min-width:85px;background:#efe5ce;border:3px solid #fff5df;color:#243e49}.postcard-book figure>div{padding:14px 4px;background:linear-gradient(160deg,#284e63 50%,#cc8274 51%,#809e8e);color:#ffe3a2;font-size:24px;text-align:center}.postcard-book figcaption{padding:6px;font-size:9px}
-@media(max-height:500px){.delivery-status{top:202px;bottom:auto;left:14px;right:14px;width:auto}}
-@media(max-height:500px) and (min-width:600px){.delivery-status{top:auto;bottom:12px;left:max(210px,30vw);right:max(90px,16vw);width:auto}}
+@media(max-height:500px){.delivery-status{top:auto;bottom:100px;left:14px;right:auto;width:180px}}
+@media(max-height:500px) and (min-width:600px){.delivery-status{top:auto;bottom:12px;left:max(210px,30vw);right:auto;width:220px}}
