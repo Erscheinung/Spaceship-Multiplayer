@@ -25,13 +25,30 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
 @media(max-width:680px){
   /* Mobile drag-pad offset: tune 14vw or the 20px/72px clamp limits to move it horizontally. */
   .vignette{background:linear-gradient(90deg,#eaf0dfee,#eaf0dfaa)}.vignette.playing{background:none}
-  .in-game{padding:0 14px}.in-game header{height:55px}.in-game .brand{font-size:15px;letter-spacing:1px}.in-game .brand-icon{font-size:28px!important;margin-right:4px}.in-game .header-right{font-size:7px;letter-spacing:.7px;padding:6px 8px;gap:6px}
-  .hud{gap:8px;grid-template-columns:1fr auto 44px;padding-top:2px}.pilot-card{padding:10px;width:100%;max-width:160px}.pilot-card .eyebrow{font-size:8px;margin-bottom:8px;letter-spacing:1px}.health{gap:4px;margin-bottom:7px}.health span{width:auto;flex:1;max-width:23px}.pilot-card small{font-size:8px;letter-spacing:0}.pilot-card b{padding:0 4px}.run-stats{padding:8px 10px;min-width:96px}.run-stats strong{font-size:24px}.run-stats>span{font-size:7px;letter-spacing:1px}.run-stats small{font-size:8px;letter-spacing:.7px}.pause-button{padding:8px;min-height:44px}.route-label{left:auto;right:18px;bottom:35px;text-align:right;border-left:0;border-right:3px solid #b55a43;padding:0 10px;max-width:180px}.route-label span{font-size:7px;letter-spacing:1px}.route-label strong{font-size:15px}.touch-controls{bottom:max(25px,env(safe-area-inset-bottom));left:clamp(20px,14vw,72px)}.touch-pad{width:104px;height:104px;font-size:38px}.touch-controls>span{font-size:7px;letter-spacing:1px}
+  .in-game{padding:0 14px}.in-game header{height:55px;display:flex;align-items:center;justify-content:space-between}
+  .in-game .brand{width:112px;max-width:112px;box-sizing:border-box;padding:5px 8px;font-size:13px;letter-spacing:1px;display:flex;align-items:center;justify-content:center}
+  .in-game .brand-icon{font-size:20px!important;margin-right:4px;line-height:1}
+  .in-game .header-right{width:140px;max-width:140px;box-sizing:border-box;padding:5px 8px;font-size:7px;letter-spacing:.7px;display:flex;align-items:center;justify-content:space-between;gap:4px;margin-left:auto}
+  .in-game .header-right .music-toggle{font-size:0;padding:4px 6px;min-height:0}
+  .in-game .header-right .music-toggle span{font-size:13px}
+  .hud{gap:6px;padding-top:2px;display:grid;grid-template-columns:112px 1fr 92px 42px;align-items:start}
+  .pilot-card{grid-column:1;padding:7px 8px;width:112px;max-width:112px;box-sizing:border-box}
+  .pilot-card .eyebrow{font-size:8px;margin-bottom:6px;letter-spacing:1px}
+  .health{gap:4px;margin-bottom:6px}.health span{width:auto;flex:1;max-width:23px}
+  .pilot-card small{font-size:8px;letter-spacing:0}.pilot-card b{padding:0 4px}
+  .run-stats{grid-column:3;width:92px;min-width:0;padding:6px 8px;box-sizing:border-box;text-align:center;justify-self:end}
+  .run-stats strong{font-size:22px;line-height:1.1;margin:2px 0}
+  .run-stats>span{font-size:7px;letter-spacing:1px}.run-stats small{font-size:8px;letter-spacing:.7px}
+  .pause-button{grid-column:4;width:42px;min-width:42px;height:42px;min-height:42px;padding:0;box-sizing:border-box;display:grid;place-items:center;font-size:17px;justify-self:end}
+  .pause-button span{display:none}
+  .route-label{left:auto;right:18px;bottom:35px;text-align:right;border-left:0;border-right:3px solid #b55a43;padding:0 10px;max-width:180px}
+  .route-label span{font-size:7px;letter-spacing:1px}.route-label strong{font-size:15px}
+  .touch-controls{bottom:max(25px,env(safe-area-inset-bottom));left:clamp(20px,14vw,72px)}.touch-pad{width:104px;height:104px;font-size:38px}.touch-controls>span{font-size:7px;letter-spacing:1px}
 }
 @media(pointer:coarse) and (min-width:681px){.touch-controls{position:fixed;bottom:25px;left:25px;display:flex;flex-direction:column;gap:8px;text-align:center}.touch-pad{touch-action:none;width:100px;height:100px;border-radius:50%;font-size:36px}.touch-controls>span{font-size:8px}.route-label{left:auto;right:25px}.game-hint{display:none}}
 
 .flight-setup{margin-bottom:22px;padding-bottom:15px;border-bottom:1px solid #40546133}.flight-setup label,.control-settings label{font-size:8px;margin:10px 0 6px}select{font:inherit;pointer-events:auto;width:100%;padding:9px 10px;border:1px solid #6a7c7c;background:#eaf0e3;color:#293e49;border-radius:3px;font-size:12px;touch-action:manipulation}.setup-note{font-size:10px;line-height:1.5;color:#536b73;margin:8px 0 12px}.control-details{pointer-events:auto;margin:12px 0;font-size:11px;color:#536b73}.control-details summary{cursor:pointer;padding:8px 0}.control-settings input[type=range]{letter-spacing:normal;padding:0;margin:5px 0 10px;height:24px;accent-color:#167e86}.control-settings{margin:12px 0}.health span{background:var(--ship-color,#198b92)}.flight-instruments{position:fixed;top:172px;left:28px;display:flex;gap:12px;font-size:9px;background:#f7f0dedd;padding:8px 10px;border:1px solid #40546144;color:#344f58}.flight-instruments b{font-size:13px}.reticle{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);font-size:28px;color:#f5f0d9;text-shadow:0 1px 2px #293e49;opacity:.8}.flight-actions{display:none}.touch-pad{display:grid;place-items:center;overscroll-behavior:none}.touch-pad span{display:block;pointer-events:none}.calibrate{width:104px;height:104px;border-radius:50%;background:#f7f0deaa;color:#344f58;border:1px solid #40546188;font-size:12px;touch-action:manipulation}.pause-panel{max-height:92svh;overflow-y:auto}.menu-layout{padding-top:30px;padding-bottom:25px}.launch-panel .panel-top{margin-bottom:18px}.launch-panel .panel-copy{margin-bottom:18px}
-@media(max-width:680px),(pointer:coarse){.flight-actions{position:fixed;right:20px;bottom:max(30px,env(safe-area-inset-bottom));display:flex;gap:12px;pointer-events:auto}.flight-actions button{touch-action:none;user-select:none;-webkit-user-select:none;width:66px;height:74px;border-radius:18px;border:1px solid #40546188;background:#f7f0debd;color:#344f58;font-size:29px;box-shadow:3px 3px 0 #293e4920}.flight-actions small{display:block;font-size:8px;letter-spacing:1px}.flight-actions button.held{background:#eeb363;transform:translateY(2px)}.route-label{display:none}.flight-instruments{top:154px;left:14px;font-size:8px;padding:6px 8px;gap:9px}.flight-instruments b{font-size:11px}.touch-controls{bottom:25px}.game-hint{display:none}}
+@media(max-width:680px),(pointer:coarse){.flight-actions{position:fixed;right:20px;bottom:max(30px,env(safe-area-inset-bottom));display:flex;gap:12px;pointer-events:auto}.flight-actions button{touch-action:none;user-select:none;-webkit-user-select:none;width:66px;height:74px;border-radius:18px;border:1px solid #40546188;background:#f7f0debd;color:#344f58;font-size:29px;box-shadow:3px 3px 0 #293e4920}.flight-actions small{display:block;font-size:8px;letter-spacing:1px}.flight-actions button.held{background:#eeb363;transform:translateY(2px)}.route-label{display:none}.flight-instruments{top:154px;left:14px;width:112px;max-width:112px;box-sizing:border-box;padding:5px 8px;display:grid;grid-template-columns:1fr auto;gap:2px 4px;font-size:8px;line-height:1.2}.flight-instruments b{font-size:10px}.flight-instruments span:last-child{grid-column:1/-1;text-align:center;font-size:7px;letter-spacing:1px;color:#536b73;border-top:1px solid #40546122;padding-top:2px;margin-top:1px}.touch-controls{bottom:25px}.game-hint{display:none}}
 @media(max-height:500px) and (pointer:coarse){.in-game header{height:40px}.hud{padding-top:0}.pilot-card,.run-stats{padding:6px 10px}.flight-instruments{top:130px}.touch-pad,.calibrate{width:85px;height:85px}.flight-actions button{height:65px;width:60px}.touch-controls,.flight-actions{bottom:12px}}
 
 /* Outer-ring touch boost: a deliberate pull beyond the pad rim gives an
@@ -82,10 +99,10 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
 .damage-feedback{position:absolute;top:100%;left:0;margin-top:3px;white-space:nowrap;background:#f7f0deed;padding:3px 5px}
 .flight-instruments{top:182px}
 @media(max-width:680px),(pointer:coarse){
- .pilot-card{width:max-content;max-width:100%;min-height:0;padding:7px 8px}
+ .pilot-card{width:112px;max-width:112px;min-height:0;padding:7px 8px;box-sizing:border-box}
  .pilot-card .eyebrow{margin-bottom:4px}
  .telemetry-strip{margin-top:4px}
- .flight-instruments{top:166px}
+ .flight-instruments{top:154px;width:112px;max-width:112px;box-sizing:border-box}
  .touch-controls{left:max(clamp(64px,20vw,100px),env(safe-area-inset-left));align-items:center;width:104px}
  .touch-label{white-space:normal;max-width:120px;line-height:1.4}
  .flight-actions{bottom:calc(max(25px,env(safe-area-inset-bottom)) + 38px)}
@@ -111,21 +128,15 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
 .postcard-moon{position:absolute;left:12%;top:7%;font-size:44px;transform:rotate(-20deg)}.postcard-waves{position:absolute;top:10px;left:56%;font-size:25px;letter-spacing:5px;transform:rotate(-25deg);color:#f1b965}.postcard-aerial{position:absolute;left:42%;top:4px;font-size:43px;color:#f1b965}
 .postcard-shop{position:absolute;bottom:10px;left:20%;padding:11px 20px 9px;background:#293e60;border:3px solid #dfba91;box-shadow:-18px 12px 0 #c2818e,18px 12px 0 #83b9b1;text-align:center;letter-spacing:4px;font-size:14px}.postcard-shop b{font-size:21px;font-weight:500;letter-spacing:8px}.postcard-stamp{position:absolute;right:8px;top:8px;padding:7px;background:#f3e2ba;color:#294b63;border:2px dashed #637c87;text-align:center;font-size:21px;transform:rotate(9deg)}.postcard-stamp small{display:block;font-size:5px;line-height:1.4;letter-spacing:1px}
 .delivery-postcard figcaption{font-size:12px;line-height:1.5;text-align:center;padding:10px 3px 3px}.delivery-postcard figcaption small{display:block;font-size:9px;margin-top:5px;color:#63777b}
-@media(max-width:680px),(pointer:coarse){.delivery-status{top:auto;bottom:191px;left:14px;width:225px;padding:8px 10px}.delivery-address{font-size:7px;margin-bottom:4px}.delivery-status strong{font-size:17px}.delivery-status p{font-size:10px;min-height:28px;margin:4px 0 6px}.delivery-status div>span{font-size:6px}.delivery-postcard .postcard-art{height:118px}}
-@media(max-height:500px){.delivery-status{top:auto;bottom:12px;left:auto;right:100px;width:230px;padding:7px 9px}.delivery-status p{min-height:0;margin:3px 0;font-size:9px}.delivery-address{font-size:6px;margin-bottom:2px}}
-
-/* Keep encounter guidance above the flight view and away from captured controls. */
-.delivery-status{top:228px;bottom:auto;width:290px;pointer-events:none}
-.delivery-status p{min-height:0}
 @media(max-width:680px),(pointer:coarse){
- .delivery-status{top:auto;bottom:160px;left:14px;right:auto;width:200px;padding:5px 8px;box-shadow:none;background:#f7f0dec8;border-left:2px solid #b65c4b;border-top:0;border-right:0;border-bottom:0;backdrop-filter:blur(4px)}
+ .delivery-status{position:fixed;top:122px;bottom:auto;left:auto;right:14px;width:140px;max-width:140px;box-sizing:border-box;padding:5px 7px;box-shadow:2px 2px 0 #293e4918;background:#f7f0dedb;border:1px solid #40546144;border-top:2px solid #b65c4b;backdrop-filter:blur(4px);pointer-events:none}
  .delivery-status .delivery-address{display:none}
- .delivery-status>div:not(.delivery-progress){display:flex;flex-wrap:nowrap;gap:4px;margin-bottom:2px}
- .delivery-status strong{font-size:11px}.delivery-status div>span{font-size:5px;margin-right:1px}
- .delivery-status p{font-size:8px;line-height:1.3;margin:0;min-height:0;max-width:none;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+ .delivery-status>div:not(.delivery-progress){display:flex;align-items:center;justify-content:space-between;gap:2px;margin-bottom:2px;font-size:7px}
+ .delivery-status strong{font-size:9px;font-weight:700}.delivery-status div>span{font-size:5px;letter-spacing:.5px;margin-right:0}
+ .delivery-status p{font-size:7px;line-height:1.25;margin:0;min-height:0;color:#536b73;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+ .delivery-postcard .postcard-art{height:118px}
 }
-@media(max-height:500px){.delivery-status{top:auto;bottom:100px;left:14px;right:auto;width:180px;padding:4px 7px}.delivery-status .delivery-address,.delivery-status>div{display:none!important}.delivery-status p{max-width:none;font-size:8px;min-height:0}}
 
 .postcard-book{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.postcard-book figure{margin:0;flex:1;min-width:85px;background:#efe5ce;border:3px solid #fff5df;color:#243e49}.postcard-book figure>div{padding:14px 4px;background:linear-gradient(160deg,#284e63 50%,#cc8274 51%,#809e8e);color:#ffe3a2;font-size:24px;text-align:center}.postcard-book figcaption{padding:6px;font-size:9px}
-@media(max-height:500px){.delivery-status{top:auto;bottom:100px;left:14px;right:auto;width:180px}}
-@media(max-height:500px) and (min-width:600px){.delivery-status{top:auto;bottom:12px;left:max(210px,30vw);right:auto;width:220px}}
+@media(max-height:500px){.delivery-status{top:auto;bottom:100px;right:14px;left:auto;width:140px;max-width:140px;padding:3px 6px}.delivery-status .delivery-address,.delivery-status>div{display:none!important}.delivery-status p{max-width:none;font-size:7px;min-height:0}}
+@media(max-height:500px) and (min-width:600px){.delivery-status{top:auto;bottom:12px;right:14px;left:auto;width:140px;max-width:140px}}
