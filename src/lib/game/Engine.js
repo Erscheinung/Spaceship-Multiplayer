@@ -238,7 +238,11 @@ export class Engine {
       }
     };
     sync(this.state?.obstacles ?? cityObstacles(time), 't', makeTower, () => {});
-    sync(this.state?.rocks ?? [], 'r', r => makeRock(r.seed), (o, r) => { o.scale.setScalar(r.r); o.rotateX(time*r.spin);o.rotateY(time*.3); });
+    sync(this.state?.rocks ?? [], 'r', r => makeRock(r.seed), (o, r) => { if (o.userData.hp !== undefined && r.hp < o.userData.hp) o.userData.hitUntil = time + .16;
+      o.userData.hp = r.hp;
+      const hit = Math.max(0, ((o.userData.hitUntil ?? 0) - time) / .16);
+      o.children[0].material.emissiveIntensity = .35 + hit * 2;
+      o.scale.setScalar(r.r * (1 + hit * .12)); o.rotateX(time*r.spin);o.rotateY(time*.3); });
     sync(this.state?.pickups ?? [], 'p', p => makePickup(p.type), o => { o.rotateX(time);o.rotateY(time*1.5);o.rotateZ(Math.PI/4); o.position.y += Math.sin(time * 4) * 0.08; });
     sync(this.state?.bullets ?? [], 'b', b => new THREE.Mesh(new THREE.SphereGeometry(0.17, 5, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(SHIP_COLORS[this.state?.settings?.colors[b.owner]] ?? COLORS.cyan).multiplyScalar(5) })), (o, b) => { o.scale.set(.75, .75, 8); o.quaternion.multiply(this.bulletRotation.setFromUnitVectors(this.bulletForward,this.bulletDirection.set(b.vx,b.vy ?? 0,b.vz).normalize())); });
     sync(this.state?.effects ?? [], 'e', e => makeImpactBurst(COLORS[e.color]), (o, e) => { o.scale.setScalar((0.45 - e.life) * 7 + 0.4); o.material.opacity = e.life / 0.45; o.rotateY(time*2); });

@@ -169,7 +169,7 @@ export function makeRock(seed) {
   // upgrades. A solid luminous core and dark latitude cage retain a clear
   // silhouette without transparent shells, pulses or extra lights.
   const group = new THREE.Group();
-  group.add(new THREE.Mesh(new THREE.IcosahedronGeometry(.9, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffa342).multiplyScalar(1.65) })));
+  group.add(new THREE.Mesh(new THREE.IcosahedronGeometry(.9, 2), new THREE.MeshStandardMaterial({ color: 0xffbb55, emissive: 0xff8b24, emissiveIntensity: .35, roughness: .38, metalness: .25, flatShading: true })));
   const cage = new THREE.Mesh(new THREE.TorusGeometry(.94, .065, 4, 16), new THREE.MeshBasicMaterial({ color: INK }));
   cage.rotation.x = Math.PI / 2; group.add(cage);
   const meridian = new THREE.Mesh(cage.geometry, cage.material); meridian.rotation.y = (seed % 7) * .3; group.add(meridian);

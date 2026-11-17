@@ -35,12 +35,15 @@ export class TiltInput {
     if (!this.enabled || !Number.isFinite(e.beta) || !Number.isFinite(e.gamma)) return;
     const orientation = this.screenAngle();
     if (this.angle !== orientation) this.onRotation();
-    // Subtract neutral angles before rotating into screen space. Normalizing
-    // the delta prevents the +/-180-degree seam from producing full steering.
-    if (!this.origin) { this.origin = { beta: e.beta, gamma: e.gamma }; clearTimeout(this.timer); }
-    const delta = (a, b) => ((a - b + 540) % 360) - 180;
-    const beta = delta(e.beta, this.origin.beta), gamma = delta(e.gamma, this.origin.gamma), angle = orientation * Math.PI / 180;
-    const x = gamma * Math.cos(angle) + beta * Math.sin(angle), z = beta * Math.cos(angle) - gamma * Math.sin(angle);
+    // Project gravity into screen coordinates; Euler subtraction breaks near
+    // landscape's gamma seam and when the phone is held upright.
+    const beta = e.beta * Math.PI / 180, gamma = e.gamma * Math.PI / 180;
+    const angle = orientation * Math.PI / 180;
+    const gx = Math.cos(beta) * Math.sin(gamma), gy = Math.sin(beta);
+    const screenX = gx * Math.cos(angle) + gy * Math.sin(angle);
+    const screenZ = gy * Math.cos(angle) - gx * Math.sin(angle);
+    if (!this.origin) { this.origin = { x: screenX, z: screenZ }; clearTimeout(this.timer); }
+    const x = (screenX - this.origin.x) * 60, z = (screenZ - this.origin.z) * 60;
     const axis = n => Math.abs(n) < 2 ? 0 : Math.max(-1, Math.min(1, (n - Math.sign(n) * 2) / 20));
     const now = performance.now(), blend = this.lastSignal ? 1 - Math.exp(-Math.min(.1, (now - this.lastSignal) / 1000) * 20) : 1;
     this.lastSignal = now;

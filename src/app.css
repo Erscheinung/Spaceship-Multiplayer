@@ -176,3 +176,24 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
  .in-game header .header-right{letter-spacing:0;gap:6px}
 }
 @media(max-height:500px){.flight-dashboard{width:340px}.flight-dashboard .delivery-status p{font-size:10px}}
+/* Compact mobile flight strip and translucent thumb targets. */
+@media(max-width:680px),(pointer:coarse){
+ .in-game header{height:32px}
+ .in-game header .brand{color:#e8e5d8;font-size:10px}
+ .in-game .header-right{color:#e8e5d8}
+ .flight-dashboard{background:#f1eddfd9;border-radius:5px}
+ .flight-dashboard .hud{padding:4px 8px;gap:6px;grid-template-columns:1fr 1fr 44px}
+ .flight-dashboard .run-stats strong{font-size:16px}
+ .flight-dashboard .pilot-card .eyebrow{font-size:8px;margin:0}
+ .flight-dashboard .flight-instruments{padding:3px 8px;font-size:9px}
+ .flight-dashboard .delivery-status{padding:4px 8px}
+ .flight-dashboard .delivery-status>div:not(.delivery-progress){float:right;margin-left:8px;gap:4px}
+ .flight-dashboard .delivery-status div>span{font-size:7px}
+ .flight-dashboard .delivery-status strong{font-size:11px}
+ .flight-dashboard .delivery-status p{font-size:10px;margin:0;line-height:1.3}
+ .touch-controls{left:clamp(64px,20vw,140px);width:94px}
+ .touch-pad,.calibrate{width:94px;height:94px;background:#e7edde25;border:1px solid #e7edde70;color:#e7edde;box-shadow:none}
+ .touch-controls .touch-label{color:#e7eddebb}
+ .flight-actions button{background:#e7edde25;border:1px solid #e7edde70;color:#e7edde;box-shadow:none;width:62px;height:68px}
+ .flight-actions button.held,.touch-pad.boost-active{background:#eeb36399}
+}
