@@ -140,3 +140,39 @@ h1 em{color:#b54f39;text-shadow:none}.intro,.hero-tags{color:#46616a}.eyebrow{co
 .postcard-book{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.postcard-book figure{margin:0;flex:1;min-width:85px;background:#efe5ce;border:3px solid #fff5df;color:#243e49}.postcard-book figure>div{padding:14px 4px;background:linear-gradient(160deg,#284e63 50%,#cc8274 51%,#809e8e);color:#ffe3a2;font-size:24px;text-align:center}.postcard-book figcaption{padding:6px;font-size:9px}
 @media(max-height:500px){.delivery-status{top:auto;bottom:100px;right:14px;left:auto;width:140px;max-width:140px;padding:3px 6px}.delivery-status .delivery-address,.delivery-status>div{display:none!important}.delivery-status p{max-width:none;font-size:7px;min-height:0}}
 @media(max-height:500px) and (min-width:600px){.delivery-status{top:auto;bottom:12px;right:14px;left:auto;width:140px;max-width:140px}}
+
+/* One flowing instrument cluster: no independently positioned HUD cards. */
+.in-game header{height:48px;border:0}
+.in-game header .brand{font-size:13px;background:none;border:0;padding:0;box-shadow:none}
+.in-game header .brand-icon{font-size:24px!important}
+.in-game .header-right{background:none;border:0;padding:0;box-shadow:none;font-size:8px}
+.flight-dashboard{width:360px;max-width:100%;background:#f1eddfed;color:#293e49;border:1px solid #40546155;border-radius:8px;overflow:hidden;align-self:flex-start}
+.flight-dashboard .hud{display:grid;grid-template-columns:1fr 1fr 44px;align-items:center;padding:10px;gap:8px}
+.flight-dashboard .pilot-card,.flight-dashboard .run-stats{width:auto;max-width:none;min-width:0;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}
+.flight-dashboard .pilot-card .eyebrow{font-size:9px;margin:0 0 4px;letter-spacing:1px}
+.flight-dashboard .health{margin:0;white-space:nowrap;gap:3px}
+.flight-dashboard .health span{width:auto;height:auto}
+.flight-dashboard .pilot-card>small,.flight-dashboard .telemetry-strip{display:none}
+.flight-dashboard .run-stats{text-align:right}
+.flight-dashboard .run-stats>span{font-size:8px;letter-spacing:1px}
+.flight-dashboard .run-stats strong{display:inline;font-size:20px;margin-right:6px}
+.flight-dashboard .run-stats small{font-size:8px;letter-spacing:0;white-space:nowrap}
+.flight-dashboard .pause-button{padding:0;width:44px;height:44px;border-radius:5px}
+.flight-dashboard .pause-button span{display:none}
+.flight-dashboard .flight-instruments{position:static;display:flex;width:auto;max-width:none;justify-content:space-between;margin:0;padding:6px 10px;background:none;border:0;border-top:1px solid #40546122;box-shadow:none;font-size:10px;gap:8px}
+.flight-dashboard .flight-instruments b{font-size:12px}
+.flight-dashboard .flight-instruments span:last-child{border:0;margin:0;padding:0;font-size:9px}
+.flight-dashboard .delivery-status{position:static;width:auto;max-width:none;padding:8px 10px;border:0;border-top:1px solid #40546122;background:none;box-shadow:none;backdrop-filter:none}
+.flight-dashboard .delivery-address{display:none}
+.flight-dashboard .delivery-status>div:not(.delivery-progress){display:flex!important;justify-content:flex-start;gap:7px;margin:0}
+.flight-dashboard .delivery-status strong{font-size:14px}
+.flight-dashboard .delivery-status div>span{font-size:9px}
+.flight-dashboard .delivery-status p{display:block;font-size:11px;line-height:1.4;margin:5px 0 0;min-height:0;overflow:visible}
+.flight-dashboard .wingmate-status{margin:0;padding:4px 10px;font-size:9px}
+.in-game .game-hint{display:none}
+@media(max-width:680px){
+ .in-game.shell{padding:0 max(12px,env(safe-area-inset-left))}
+ .flight-dashboard{width:100%}
+ .in-game header .header-right{letter-spacing:0;gap:6px}
+}
+@media(max-height:500px){.flight-dashboard{width:340px}.flight-dashboard .delivery-status p{font-size:10px}}
